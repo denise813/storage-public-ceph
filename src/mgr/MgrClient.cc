@@ -19,6 +19,9 @@
 
 #include "msg/Messenger.h"
 #include "messages/MMgrMap.h"
+/* modify begin by hy, 2020-10-15, BugId:123 原因: 添加 iscsi 进程获取 iscsi map */
+#include "messages/MServiceMap.h"
+/* modify end by hy, 2020-10-15 */
 #include "messages/MMgrReport.h"
 #include "messages/MMgrOpen.h"
 #include "messages/MMgrClose.h"
@@ -99,6 +102,10 @@ bool MgrClient::ms_dispatch2(const ref_t<Message>& m)
   switch(m->get_type()) {
   case MSG_MGR_MAP:
     return handle_mgr_map(ref_cast<MMgrMap>(m));
+/* modify begin by hy, 2020-10-15, BugId:123 原因: 添加 iscsi 进程获取 iscsi map */
+  case MSG_SERVICE_MAP:
+    return handle_service_map(ref_cast<MServiceMap>(m));
+/* modify end by hy, 2020-10-15 */
   case MSG_MGR_CONFIGURE:
     return handle_mgr_configure(ref_cast<MMgrConfigure>(m));
   case MSG_MGR_CLOSE:
@@ -261,6 +268,30 @@ bool MgrClient::handle_mgr_map(ref_t<MMgrMap> m)
 
   return true;
 }
+
+/* modify begin by hy, 2020-10-15, BugId:123 原因: 添加 iscsi 进程获取 iscsi map */
+bool MgrClient::handle_service_map(ref_t<MServiceMap> m)
+{
+  ceph_assert(ceph_mutex_is_locked_by_me(lock));
+
+  ldout(cct, 20) << *m << dendl;
+
+  servicemap = m->get_map();
+  ldout(cct, 4) << "Got map version " << servicemap.epoch << dendl;
+
+#if 0
+  ldout(cct, 4) << "Active mgr is now " << servicemap.get_active_addrs() << dendl;
+
+  // Reset session?
+  if (!session ||
+      session->con->get_peer_addrs() != servicemap.get_active_addrs()) {
+    reconnect();
+  }
+#endif
+
+  return true;
+}
+/* modify end by hy, 2020-10-15 */
 
 bool MgrClient::ms_handle_reset(Connection *con)
 {
@@ -594,6 +625,16 @@ int MgrClient::service_daemon_register(
 
   return 0;
 }
+
+/* modify begin by hy, 2020-10-15, BugId:123 原因: */
+bool MgrClient::get_service_map(const std::string &service, std::vector<const char *> maps)
+{
+  for (const auto &p : servicemap.services[service].daemons) {
+    maps.push_back(p.first.c_str());
+  }
+  return true;
+}
+/* modify end by hy, 2020-10-15 */
 
 int MgrClient::service_daemon_update_status(
   std::map<std::string,std::string>&& status)

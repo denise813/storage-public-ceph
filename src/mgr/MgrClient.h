@@ -19,6 +19,9 @@
 #include "msg/Connection.h"
 #include "msg/Dispatcher.h"
 #include "mon/MgrMap.h"
+/* modify begin by hy, 2020-10-15, BugId:123 原因: 添加 iscsi 进程获取 iscsi map */
+#include "mgr/ServiceMap.h"
+/* modify end by hy, 2020-10-15 */
 #include "mgr/DaemonHealthMetric.h"
 
 #include "messages/MMgrReport.h"
@@ -61,6 +64,9 @@ class MgrClient : public Dispatcher
 protected:
   CephContext *cct;
   MgrMap map;
+  /* add begin by hy, 2020-12-12, BugId:123 原因: 添加 iscsi 进程获取 iscsi map */
+  ServiceMap servicemap;
+  /* add begin by hy, 2020-12-12 */
   Messenger *msgr;
   MonMap *monmap;
 
@@ -122,6 +128,10 @@ public:
   bool ms_handle_refused(Connection *con) override;
 
   bool handle_mgr_map(ceph::ref_t<MMgrMap> m);
+/* modify begin by hy, 2020-10-15, BugId:123 原因: 添加 iscsi 进程获取 iscsi map */
+  bool handle_service_map(ceph::ref_t<MServiceMap> m);
+  bool get_service_map(const std::string &service, std::vector<const char *> maps);
+/* modify end by hy, 2020-10-15 */
   bool handle_mgr_configure(ceph::ref_t<MMgrConfigure> m);
   bool handle_mgr_close(ceph::ref_t<MMgrClose> m);
   bool handle_command_reply(

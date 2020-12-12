@@ -1284,6 +1284,24 @@ int librados::RadosClient::service_daemon_update_status(
   return mgrclient.service_daemon_update_status(std::move(status));
 }
 
+/* add begin by hy, 2020-12-12, BugId:123 原因: 添加 iscsi 进程获取 iscsi map */
+int librados::RadosClient::subscribe_servicemap(const std::string& service)
+{
+  monclient.sub_want(service, 0, 0);
+  monclient.renew_subs();
+
+  return 0;
+}
+
+int librados::RadosClient::get_servicemap(const std::string& service,
+  std::vector<const char *> map)
+{
+  mgrclient.get_service_map(service, map);
+
+  return 0;
+}
+/* add end by hy, 2020-12-12 */
+
 mon_feature_t librados::RadosClient::get_required_monitor_features() const
 {
   return monclient.with_monmap([](const MonMap &monmap) {

@@ -108,6 +108,13 @@ struct ServiceMap {
 
   epoch_t epoch = 0;
   utime_t modified;
+
+/* modify begin by hy, 2020-10-15, BugId:123 原因: 添加 iscsi 进程获取 iscsi map */
+/** comment by hy 2020-04-23
+ * # active service 进程的地址
+ */
+  entity_addrvec_t active_addrs;
+/* modify end by hy, 2020-10-15 */
   std::map<std::string,Service> services;
 
   void encode(ceph::buffer::list& bl, uint64_t features) const;
@@ -150,6 +157,10 @@ struct ServiceMap {
 
     return false;
   }
+
+/* modify begin by hy, 2020-10-15, BugId:123 原因: 添加 iscsi 进程获取 iscsi map */
+  entity_addrvec_t get_active_addrs() const { return active_addrs; }
+/* modify end by hy, 2020-10-15 */
 };
 WRITE_CLASS_ENCODER_FEATURES(ServiceMap)
 WRITE_CLASS_ENCODER_FEATURES(ServiceMap::Service)

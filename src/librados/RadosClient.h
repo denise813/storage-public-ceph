@@ -213,6 +213,11 @@ public:
   int service_daemon_update_status(
     std::map<std::string,std::string>&& status);
 
+/* add begin by hy, 2020-12-12, BugId:123 原因: 添加 iscsi 进程获取 iscsi map */
+  int subscribe_servicemap(const std::string& service);
+  int get_servicemap(const std::string &service, std::vector<const char *> map);
+/* add end by hy, 2020-12-12 */
+
   mon_feature_t get_required_monitor_features() const;
 
   int get_inconsistent_pgs(int64_t pool_id, std::vector<std::string>* pgs);
