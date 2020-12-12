@@ -3831,6 +3831,18 @@ std::vector<Option> get_global_options() {
     .set_default(4_K)
     .set_description(""),
 
+/** add begin by hy, 2020-08-26, BugId:123 原因: 添加cache 开关 */
+    Option("rocksdb_no_block_cache", Option::TYPE_BOOL, Option::LEVEL_DEV)
+    .set_default(false)
+    .set_description("Whether to cache the block chche."),
+    Option("rocksdb_block_align", Option::TYPE_BOOL, Option::LEVEL_DEV)
+    .set_default(false)
+    .set_description("Whether to align the block."),
+/* add end by hy, 2020-08-26 */
+
+/** comment by hy 2020-07-28
+ * # rocks 统计数据
+ */
     Option("rocksdb_perf", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
     .set_description(""),
