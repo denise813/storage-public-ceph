@@ -32,7 +32,9 @@ def activate_bluestore(meta, tmpfs, systemd, block_wal=None, block_db=None):
     # Once symlinks are removed, the osd dir can be 'primed again. chown first,
     # regardless of what currently exists so that ``prime-osd-dir`` can succeed
     # even if permissions are somehow messed up
-    system.chown(osd_path)
+	# modify begin by hy, 2020-12-12, BugId:123 原因: root 启动
+    # system.chown(osd_path)
+	# modify end by hy, 2020-12-12
     prime_command = [
         'ceph-bluestore-tool',
         'prime-osd-dir', '--dev', meta['device'],
@@ -50,8 +52,9 @@ def activate_bluestore(meta, tmpfs, systemd, block_wal=None, block_db=None):
 
     if block_db:
         prepare_utils.link_db(block_db, osd_id, osd_uuid)
-
-    system.chown(osd_path)
+    # modify begin by hy, 2020-12-12, BugId:123 原因: root 启动
+    #system.chown(osd_path)
+	# modify end by hy, 2020-12-12
     terminal.success("ceph-volume raw activate successful for osd ID: %s" % osd_id)
 
 

@@ -108,7 +108,12 @@ class Prepare(object):
             secrets['dmcrypt_key'] = os.getenv('CEPH_VOLUME_DMCRYPT_SECRET')
             secrets['cephx_lockbox_secret'] = cephx_lockbox_secret # dummy value to make `ceph osd new` not complaining
 
-        osd_fsid = system.generate_uuid()
+
+        # modify begin by hy, 2020-12-12, BugId:123 原因: root 启动
+        if self.args.osd_fsid != None:
+                osd_fsid = self.args.osd_fsid
+        else :
+                osd_fsid = system.generate_uuid()
         crush_device_class = self.args.crush_device_class
         if crush_device_class:
             secrets['crush_device_class'] = crush_device_class
@@ -120,9 +125,14 @@ class Prepare(object):
         if self.args.block_db:
             db = self.args.block_db
 
+        #  specify osd_id by args
+        if self.args.osd_id != None:
+            self.osd_id = self.args.osd_id
+        else :
         # reuse a given ID if it exists, otherwise create a new ID
         self.osd_id = prepare_utils.create_id(
             osd_fsid, json.dumps(secrets))
+		 # modify begin by hy, 2020-12-12
 
         prepare_bluestore(
             self.args.data,
@@ -142,11 +152,11 @@ class Prepare(object):
         Once the OSD is ready, an ad-hoc systemd unit will be enabled so that
         it can later get activated and the OSD daemon can get started.
 
-            ceph-volume raw prepare --bluestore --data {device}
+            ceph-volume raw prepare --bluestore --data {device} [--osd-id id]
 
         DB and WAL devices are supported.
 
-            ceph-volume raw prepare --bluestore --data {device} --block.db {device} --block.wal {device}
+            ceph-volume raw prepare --bluestore --data {device} --block.db {device} --block.wal {device} [--osd-id id]
 
         """)
         parser = create_parser(
@@ -156,6 +166,7 @@ class Prepare(object):
         if not self.argv:
             print(sub_command_help)
             return
+        # 解析参数得到参数名称
         self.args = parser.parse_args(self.argv)
         if not self.args.bluestore:
             terminal.error('must specify --bluestore (currently the only supported backend)')

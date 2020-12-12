@@ -47,7 +47,9 @@ def write_keyring(osd_id, secret, keyring_name='keyring', name=None):
             '--name', name,
             '--add-key', secret
         ])
-    system.chown(osd_keyring)
+    # modify begin by hy, 2020-12-12, BugId:123 原因: root 启动
+    # system.chown(osd_keyring)
+    # modify begin by hy, 2020-12-12
 
 
 def get_journal_size(lv_format=True):
@@ -95,7 +97,6 @@ def get_block_db_size(lv_format=True):
         logger.debug(
             'block.db has no size configuration, will fallback to using as much as possible'
         )
-        # TODO better to return disk.Size(b=0) here
         return None
     logger.debug('bluestore_block_db_size set to %s' % conf_db_size)
     db_size = disk.Size(b=str_to_int(conf_db_size))
@@ -160,10 +161,9 @@ def create_id(fsid, json_secrets, osd_id=None):
         'osd', 'new', fsid
     ]
     if osd_id is not None:
-        if osd_id_available(osd_id):
-            cmd.append(osd_id)
-        else:
-            raise RuntimeError("The osd ID {} is already in use or does not exist.".format(osd_id))
+        # modify begin by hy, 2020-12-12, BugId:123 原因: 指定osd_id 进行创建
+        cmd.append(osd_id)
+        # modify begin by hy, 2020-12-12
     stdout, stderr, returncode = process.call(
         cmd,
         stdin=json_secrets,
@@ -333,7 +333,9 @@ def _link_device(device, device_type, osd_id):
         device_type
     )
     command = ['ln', '-s', device, device_path]
-    system.chown(device)
+    # modify begin by hy, 2020-12-12, BugId:123 原因: root 启动
+    #system.chown(device)
+	# modify end by hy, 2020-12-12
 
     process.run(command)
 
@@ -415,7 +417,7 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
                    --osd-data /var/lib/ceph/osd/ceph-0 \
                    --osd-uuid 8d208665-89ae-4733-8888-5d3bfbeeec6c \
                    --keyring /var/lib/ceph/osd/ceph-0/keyring \
-                   --setuser ceph --setgroup ceph
+                   --setuser root --setgroup root
 
     In some cases it is required to use the keyring, when it is passed in as
     a keyword argument it is used as part of the ceph-osd command
@@ -423,7 +425,8 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
     path = '/var/lib/ceph/osd/%s-%s/' % (conf.cluster, osd_id)
     monmap = os.path.join(path, 'activate.monmap')
 
-    system.chown(path)
+    # modify begin by hy, 2020-12-12, BugId:123 原因: root 启动
+    # system.chown(path)
 
     base_command = [
         'ceph-osd',
@@ -437,8 +440,8 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
     supplementary_command = [
         '--osd-data', path,
         '--osd-uuid', fsid,
-        '--setuser', 'ceph',
-        '--setgroup', 'ceph'
+        '--setuser', 'root',
+        '--setgroup', 'root'
     ]
 
     if keyring is not None:
@@ -448,13 +451,14 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
         base_command.extend(
             ['--bluestore-block-wal-path', wal]
         )
-        system.chown(wal)
+        # system.chown(wal)
 
     if db:
         base_command.extend(
             ['--bluestore-block-db-path', db]
         )
-        system.chown(db)
+        # system.chown(db)
+    # modify end by hy, 2020-12-12
 
     if get_osdspec_affinity():
         base_command.extend(['--osdspec-affinity', get_osdspec_affinity()])
@@ -490,15 +494,17 @@ def osd_mkfs_filestore(osd_id, fsid, keyring):
                    --osd-journal /var/lib/ceph/osd/ceph-0/journal \
                    --osd-uuid 8d208665-89ae-4733-8888-5d3bfbeeec6c \
                    --keyring /var/lib/ceph/osd/ceph-0/keyring \
-                   --setuser ceph --setgroup ceph
+                   --setuser root --setgroup root
 
     """
     path = '/var/lib/ceph/osd/%s-%s/' % (conf.cluster, osd_id)
     monmap = os.path.join(path, 'activate.monmap')
     journal = os.path.join(path, 'journal')
 
-    system.chown(journal)
-    system.chown(path)
+    # modify begin by hy, 2020-12-12, BugId:123 原因: root 启动
+    # system.chown(journal)
+    # system.chown(path)
+	# modify end by hy, 2020-12-12
 
     command = [
         'ceph-osd',
@@ -520,8 +526,8 @@ def osd_mkfs_filestore(osd_id, fsid, keyring):
         '--osd-data', path,
         '--osd-journal', journal,
         '--osd-uuid', fsid,
-        '--setuser', 'ceph',
-        '--setgroup', 'ceph'
+        '--setuser', 'root',
+        '--setgroup', 'root'
     ])
 
     _, _, returncode = process.call(
