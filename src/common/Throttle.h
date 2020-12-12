@@ -29,8 +29,14 @@ class Throttle final : public ThrottleInterface {
   CephContext *cct;
   const std::string name;
   PerfCountersRef logger;
+/** comment by hy 2020-04-23
+ * # 当前并发数和最大值
+ */
   std::atomic<int64_t> count = { 0 }, max = { 0 };
   std::mutex lock;
+/** comment by hy 2020-04-23
+ * # FIFO 等待队列
+ */
   std::list<std::condition_variable> conds;
   const bool use_perf;
 
@@ -40,6 +46,9 @@ public:
 
 private:
   void _reset_max(int64_t m);
+/** comment by hy 2020-04-23
+ * # 是否超过并发的限制
+ */
   bool _should_wait(int64_t c) const {
     int64_t m = max;
     int64_t cur = count;
@@ -49,6 +58,11 @@ private:
        (c >= m && cur > m));     // except for large c
   }
 
+/** comment by hy 2020-04-23
+ * # 核心实现函数，如果需要阻塞，会新建一个条件变量，
+       然后放入链表中，等待自己的条件变量被唤醒
+     如果多次调用，会形成一个阻塞链表，按照FIFO顺序被唤醒
+ */
   bool _wait(int64_t c, std::unique_lock<std::mutex>& l);
 
 public:
@@ -92,6 +106,9 @@ public:
   /**
    * get the specified amount of slots from the stock, but will wait if the
    * total number taken by consumer would exceed the maximum number.
+   * 将并发参数max设置为m，必要时会等待之前已经在等待的操作完成
+   * 等待可以进行c个并发，阻塞
+   * 接着将当前并发数增加为c
    * @param c number of slots to get
    * @param m new maximum number to set, ignored if it is 0
    * @returns true if this request is blocked due to the throttling, false 
@@ -108,6 +125,7 @@ public:
 
   /**
    * put slots back to the stock
+   * 释放资源，减少计数，非阻塞
    * @param c number of slots to return
    * @returns number of requests being hold after this
    */
@@ -132,6 +150,8 @@ public:
  * Creates a throttle which gradually induces delays when get() is called
  * based on params low_threshold, high_threshold, expected_throughput,
  * high_multiple, and max_multiple.
+ *
+ * 动态地插入delay时间，阻塞调用线程
  *
  * In [0, low_threshold), we want no delay.
  *
@@ -159,15 +179,23 @@ class BackoffThrottle {
 
   std::mutex lock;
   using locker = std::unique_lock<std::mutex>;
-
+/** comment by hy 2020-04-09
+ * # conds变量的索引
+ */
   unsigned next_cond = 0;
 
   /// allocated once to avoid constantly allocating new ones
+/** comment by hy 2020-04-09
+ * # 当于做了一个分片，避免所有线程都wait在一个条件变量上
+ */
   std::vector<std::condition_variable> conds;
 
   const bool use_perf;
 
   /// pointers into conds
+/** comment by hy 2020-04-09
+ * # wait的fifo队列
+ */
   std::list<std::condition_variable*> waiters;
 
   std::list<std::condition_variable*>::iterator _push_waiter() {
@@ -197,7 +225,9 @@ class BackoffThrottle {
   /// max
   uint64_t max = 0;
   uint64_t current = 0;
-
+/** comment by hy 2020-04-09
+ * # 计算delay值的函数
+ */
   ceph::timespan _get_delay(uint64_t c) const;
 
 public:
@@ -248,14 +278,26 @@ class SimpleThrottle {
 public:
   SimpleThrottle(uint64_t max, bool ignore_enoent);
   ~SimpleThrottle();
+/** comment by hy 2020-04-23
+ * # 使用计数+1，超过最大限制会阻塞
+ */
   void start_op();
+/** comment by hy 2020-04-23
+ * # 使用计数-1
+ */
   void end_op(int r);
   bool pending_error() const;
   int wait_for_ret();
 private:
   mutable std::mutex m_lock;
   std::condition_variable m_cond;
+/** comment by hy 2020-04-23
+ * # 并发最大限制数
+ */
   uint64_t m_max;
+/** comment by hy 2020-04-23
+ * # 当前的并发数
+ */
   uint64_t m_current = 0;
   int m_ret = 0;
   bool m_ignore_enoent;
@@ -370,6 +412,9 @@ class TokenBucketThrottle {
   // minimum of the filling period.
   uint64_t m_tick_min = 50;
   // tokens filling period, its unit is millisecond.
+/** comment by hy 2020-08-17
+ * # 多少毫秒产生令牌
+ */
   uint64_t m_tick = 0;
   /**
    * These variables are used to calculate how many tokens need to be put into
@@ -419,12 +464,20 @@ public:
 
   template <typename T, typename I, void(T::*MF)(int, I*, uint64_t)>
   void add_blocker(uint64_t c, T *handler, I *item, uint64_t flag) {
+/** comment by hy 2020-08-17
+ * # 异步回调
+ */
     Context *ctx = new LambdaContext([handler, item, flag](int r) {
       (handler->*MF)(r, item, flag);
       });
     m_blockers.emplace_back(c, ctx);
   }
 
+/** comment by hy 2020-08-17
+ * # ImageRequestWQ<I>,
+     ImageDispatchSpec<I>,
+     &ImageRequestWQ<I>::handle_throttle_ready
+ */
   template <typename T, typename I, void(T::*MF)(int, I*, uint64_t)>
   bool get(uint64_t c, T *handler, I *item, uint64_t flag) {
     bool wait = false;
@@ -437,6 +490,9 @@ public:
       if (0 == m_throttle.max || 0 == m_avg)
         return false;
 
+/** comment by hy 2020-08-17
+ * # 从桶中获取数量
+ */
       got = m_throttle.get(c);
       if (got < c) {
         // Not enough tokens, add a blocker for it.
@@ -444,6 +500,9 @@ public:
       }
     }
 
+/** comment by hy 2020-08-17
+ * # 记录到阻塞中
+ */
     if (wait)
       add_blocker<T, I, MF>(c - got, handler, item, flag);
 

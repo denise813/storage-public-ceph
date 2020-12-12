@@ -28,11 +28,17 @@ CacheServer::~CacheServer() {
 int CacheServer::run() {
   ldout(cct, 20) << dendl;
 
+/** comment by hy 2020-09-09
+ * # 这里
+ */
   int ret = start_accept();
   if (ret != 0) {
     return ret;
   }
 
+/** comment by hy 2020-09-09
+ * # 启动 boost::asio::io_service 框架
+ */
   boost::system::error_code ec;
   ret = m_io_service.run(ec);
   if (ec) {
@@ -71,6 +77,9 @@ int CacheServer::start_accept() {
     return -ec.value();
   }
 
+/** comment by hy 2020-09-09
+ * # 
+ */
   accept();
   return 0;
 }
@@ -99,6 +108,9 @@ void CacheServer::handle_accept(CacheSessionPtr new_session,
   new_session->start();
 
   // lanuch next accept
+/** comment by hy 2020-09-09
+ * # 处理函数
+ */
   accept();
 }
 

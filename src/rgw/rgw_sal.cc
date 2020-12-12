@@ -303,6 +303,14 @@ rgw::sal::RGWRadosStore *RGWStoreManager::init_storage_provider(CephContext *cct
   store->setRados(rados);
   rados->set_store(store);
 
+/** comment by hy 2020-03-03
+ * # 因为每个接口的上一个都是返回引用所以就连掉用
+ */
+/** comment by hy 2020-03-05
+ * # RGWRados::initialize 里面包括服务启动的线程
+     set_use_cache 表示启动用户信息的cache 与 RGWRados::init_svc 关联
+     最后 与 civetweb_callback 一起工作
+ */
   if ((*rados).set_use_cache(use_cache)
               .set_run_gc_thread(use_gc_thread)
               .set_run_lc_thread(use_lc_thread)
@@ -317,6 +325,19 @@ rgw::sal::RGWRadosStore *RGWStoreManager::init_storage_provider(CephContext *cct
   return store;
 }
 
+/*****************************************************************************
+ * 函 数 名  : RGWStoreManager.init_raw_storage_provider
+ * 负 责 人  : hy
+ * 创建日期  : 2020年3月11日
+ * 函数功能  : 获取radosrgw 存储服务端信息
+                 只给radosrgw-admin 初始化加载信息
+ * 输入参数  : CephContext *cct   
+ * 输出参数  : 无
+ * 返 回 值  : rgw
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 rgw::sal::RGWRadosStore *RGWStoreManager::init_raw_storage_provider(CephContext *cct)
 {
   RGWRados *rados = new RGWRados;

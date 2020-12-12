@@ -1177,6 +1177,9 @@ extern "C" int _rados_write(rados_ioctx_t io, const char *o, const char *buf, si
   if (len > UINT_MAX/2)
     return -E2BIG;
   librados::IoCtxImpl *ctx = (librados::IoCtxImpl *)io;
+/** comment by hy 2020-01-28
+ * # 生成对象
+ */
   object_t oid(o);
   bufferlist bl;
   bl.append(buf, len);
@@ -1263,16 +1266,31 @@ extern "C" int _rados_read(rados_ioctx_t io, const char *o, char *buf, size_t le
   int ret;
   object_t oid(o);
 
+/** comment by hy 2020-01-13
+ * # 创建缓存容器
+ */
   bufferlist bl;
+/** comment by hy 2020-01-13
+ * # 使用 new 创建空间,将其放入容器中
+ */
   bufferptr bp = buffer::create_static(len, buf);
   bl.push_back(bp);
 
+/** comment by hy 2020-01-13
+ * # 调取读取API进行读取操作
+ */
   ret = ctx->read(oid, bl, len, off);
   if (ret >= 0) {
+/** comment by hy 2020-01-13
+ * # 读取到的长度多,底下发生错误,但是为什么会读多了?
+ */
     if (bl.length() > len) {
       tracepoint(librados, rados_read_exit, -ERANGE, NULL);
       return -ERANGE;
     }
+/** comment by hy 2020-01-13
+ * # 可以够装数据,就进行装载
+ */
     if (!bl.is_provided_buffer(buf))
       bl.begin().copy(bl.length(), buf);
     ret = bl.length();    // hrm :/

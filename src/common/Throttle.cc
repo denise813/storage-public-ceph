@@ -108,6 +108,13 @@ bool Throttle::_wait(int64_t c, std::unique_lock<std::mutex>& l)
       }
     }
     // wake up the next guy
+/** comment by hy 2020-04-23
+ * # 唤醒后面新加入的waiter
+     执行到这里，说明计数已经满足，可以执行，继续唤醒后面waiters，
+     而不是等待自己释放了计数才去唤醒
+     这是因为前面一次可能释放了很多计数
+     后面几个新加的waiters都可以得到满足
+ */
     if (!conds.empty())
       conds.front().notify_one();
   }
@@ -164,10 +171,19 @@ bool Throttle::get(int64_t c, int64_t m)
   {
     std::unique_lock l(lock);
     if (m) {
+/** comment by hy 2020-04-23
+ * # 重置并发数max
+ */
       ceph_assert(m > 0);
       _reset_max(m);
     }
+/** comment by hy 2020-04-23
+ * # 获取资源
+ */
     waited = _wait(c, l);
+/** comment by hy 2020-04-23
+ * # 增加计数
+ */
     count += c;
   }
   if (logger) {
@@ -223,9 +239,15 @@ int64_t Throttle::put(int64_t c)
   std::lock_guard l(lock);
   if (c) {
     if (!conds.empty())
+/** comment by hy 2020-04-23
+ * # 唤醒下一个
+ */
       conds.front().notify_one();
     // if count goes negative, we failed somewhere!
     ceph_assert(count >= c);
+/** comment by hy 2020-04-23
+ * # 减少计数
+ */
     count -= c;
     if (logger) {
       logger->inc(l_throttle_put);
@@ -418,6 +440,9 @@ ceph::timespan BackoffThrottle::_get_delay(uint64_t c) const
 ceph::timespan BackoffThrottle::get(uint64_t c)
 {
   locker l(lock);
+/** comment by hy 2020-04-09
+ * # 提前计算一下wait值
+ */
   auto delay = _get_delay(c);
 
   if (logger) {
@@ -435,31 +460,49 @@ ceph::timespan BackoffThrottle::get(uint64_t c)
       logger->set(l_backoff_throttle_val, current);
     }
 
+/** comment by hy 2020-04-09
+ * # 不用wait，直接返回
+ */
     return ceph::make_timespan(0);
   }
 
+/** comment by hy 2020-04-09
+ * # 获取wait的条件变量并插入链表
+ */
   auto ticket = _push_waiter();
   auto wait_from = mono_clock::now();
   bool waited = false;
 
   while (waiters.begin() != ticket) {
+/** comment by hy 2020-04-09
+ * # 等待自己变为链表头部
+ */
     (*ticket)->wait(l);
     waited = true;
   }
 
   auto start = mono_clock::now();
+/** comment by hy 2020-04-09
+ * # 再次计算wait的值，此时自己已经是链表头部的条件变量
+ */
   delay = _get_delay(c);
   while (true) {
     if (max != 0 && current != 0 && (current + c) > max) {
+/** comment by hy 2020-04-09
+ * # 超过上限(current + c > max)，一直wait，等待唤醒
+ */
       (*ticket)->wait(l);
       waited = true;
-    } else if (delay.count() > 0) {
+    } else if (delay.count() > 0) { //wait一段时间
       (*ticket)->wait_for(l, delay);
       waited = true;
     } else {
       break;
     }
     ceph_assert(ticket == waiters.begin());
+/** comment by hy 2020-04-09
+ * # 重新计算wait值
+ */
     delay = _get_delay(c);
     auto elapsed = mono_clock::now() - start;
     if (delay <= elapsed) {
@@ -468,9 +511,17 @@ ceph::timespan BackoffThrottle::get(uint64_t c)
       delay -= elapsed;
     }
   }
+/** comment by hy 2020-04-09
+ * # 清除条件变量
+ */
   waiters.pop_front();
+/** comment by hy 2020-04-09
+ * # 唤醒后面的wait
+ */
   _kick_waiters();
-
+/** comment by hy 2020-04-09
+ * # get成功，修改计数
+ */
   current += c;
 
   if (logger) {
@@ -539,14 +590,23 @@ void SimpleThrottle::start_op()
 {
   std::unique_lock l(m_lock);
   waiters++;
+/** comment by hy 2020-04-23
+ * # 阻塞等待
+ */
   m_cond.wait(l, [this]() { return m_max != m_current; });
   waiters--;
+/** comment by hy 2020-04-23
+ * # 增加计数
+ */
   ++m_current;
 }
 
 void SimpleThrottle::end_op(int r)
 {
   std::lock_guard l(m_lock);
+/** comment by hy 2020-04-23
+ * # 减少计数
+ */
   --m_current;
   if (r < 0 && !m_ret && !(r == -ENOENT && m_ignore_enoent))
     m_ret = r;
@@ -748,6 +808,9 @@ int TokenBucketThrottle::set_limit(uint64_t average, uint64_t burst) {
     m_avg = average;
     m_burst = burst;
 
+/** comment by hy 2020-08-17
+ * # m_tick 表示多少毫秒产生令牌
+ */
     if (0 == average) {
       // The limit is not set, and no tokens will be put into the bucket.
       // So, we can schedule the timer slowly, or even cancel it.
@@ -760,6 +823,9 @@ int TokenBucketThrottle::set_limit(uint64_t average, uint64_t burst) {
       }
 
       // this is for the number(avg) can not be divisible.
+/** comment by hy 2020-08-17
+ * # 数值
+ */
       m_ticks_per_second = 1000 / m_tick;
       m_current_tick = 0;
 
@@ -771,6 +837,9 @@ int TokenBucketThrottle::set_limit(uint64_t average, uint64_t burst) {
   }
 
   // The schedule period will be changed when the average rate is set.
+/** comment by hy 2020-08-17
+ * # 定时线程用于添加令牌
+ */
   {
     std::lock_guard timer_locker{*m_timer_lock};
     cancel_timer();
@@ -807,19 +876,35 @@ void TokenBucketThrottle::add_tokens() {
   {
     std::lock_guard lock(m_lock);
     // put tokens into bucket.
+/** comment by hy 2020-08-21
+ * # 定时增加
+ */
     m_throttle.put(tokens_this_tick());
+
+/** comment by hy 2020-08-17
+ * # 不限制带宽
+ */
     if (0 == m_avg || 0 == m_throttle.max)
       tmp_blockers.swap(m_blockers);
     // check the m_blockers from head to tail, if blocker can get
     // enough tokens, let it go.
+/** comment by hy 2020-08-17
+ * # 完成的放到临时容器中
+ */
     while (!m_blockers.empty()) {
       Blocker &blocker = m_blockers.front();
+/** comment by hy 2020-08-17
+ * # 申请对应的量
+ */
       uint64_t got = m_throttle.get(blocker.tokens_requested);
       if (got == blocker.tokens_requested) {
         // got enough tokens for front.
         tmp_blockers.splice(tmp_blockers.end(), m_blockers, m_blockers.begin());
       } else {
         // there is no more tokens.
+/** comment by hy 2020-08-17
+ * # 更新剩余的数据
+ */
         blocker.tokens_requested -= got;
         break;
       }
@@ -838,6 +923,9 @@ void TokenBucketThrottle::schedule_timer() {
       });
   m_timer->add_event_after(m_schedule_tick, m_token_ctx);
 
+/** comment by hy 2020-08-17
+ * # 添加令牌
+ */
   add_tokens();
 }
 

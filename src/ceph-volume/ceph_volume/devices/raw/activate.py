@@ -130,6 +130,7 @@ class Activate(object):
         if not args.no_systemd:
             terminal.error('systemd support not yet implemented')
             raise SystemExit(1)
+        # 设备格式化的时候已经写入设备
         self.activate(args.device,
                       tmpfs=not args.no_tmpfs,
                       systemd=not self.args.no_systemd,

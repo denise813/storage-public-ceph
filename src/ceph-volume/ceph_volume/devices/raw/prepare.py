@@ -156,6 +156,7 @@ class Prepare(object):
         if not self.argv:
             print(sub_command_help)
             return
+        # 解析参数得到参数名称
         self.args = parser.parse_args(self.argv)
         if not self.args.bluestore:
             terminal.error('must specify --bluestore (currently the only supported backend)')

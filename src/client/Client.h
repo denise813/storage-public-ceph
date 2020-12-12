@@ -224,6 +224,9 @@ struct dir_result_t {
   struct dirent de;
 };
 
+/** comment by hy 2020-03-21
+ * # 这个暂时用户 MGR
+ */
 class Client : public Dispatcher, public md_config_obs_t {
 public:
   friend class C_Block_Sync; // Calls block map and protected helpers

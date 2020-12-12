@@ -130,6 +130,9 @@ CreateRequest<I>::CreateRequest(const ConfigProxy& config, IoCtx &ioctx,
   m_io_ctx.dup(ioctx);
   m_cct = reinterpret_cast<CephContext *>(m_io_ctx.cct());
 
+/** comment by hy 2020-02-18
+ * # 获取对象id
+ */
   m_id_obj = util::id_obj_name(m_image_name);
   m_header_obj = util::header_name(m_image_id);
   m_objmap_name = ObjectMap<>::object_map_name(m_image_id, CEPH_NOSNAP);
@@ -252,6 +255,9 @@ void CreateRequest<I>::send() {
     return;
   }
 
+/** comment by hy 2020-10-23
+ * # 这个是数据pool验证,适用于ecpool 创建 rbd的过程
+ */
   validate_data_pool();
 }
 
@@ -270,6 +276,9 @@ void CreateRequest<I>::validate_data_pool() {
     m_data_io_ctx.set_namespace(m_io_ctx.get_namespace());
   }
 
+/** comment by hy 2020-10-23
+ * # 跳过该阶段直接创建
+ */
   if (!m_config.get_val<bool>("rbd_validate_pool")) {
     add_image_to_directory();
     return;

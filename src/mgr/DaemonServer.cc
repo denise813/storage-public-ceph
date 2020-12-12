@@ -435,6 +435,9 @@ bool DaemonServer::handle_open(const ref_t<MMgrOpen>& m)
       daemon = std::make_shared<DaemonState>(daemon_state.types);
       daemon->key = key;
       daemon->service_daemon = true;
+/** comment by hy 2020-10-10
+ * # 插入信息
+ */
       daemon_state.insert(daemon);
     } else {
       /* A normal Ceph daemon has connected but we are or should be waiting on
@@ -581,6 +584,9 @@ bool DaemonServer::handle_report(const ref_t<MMgrReport>& m)
       dout(5) << "rejecting report from " << key << ", since we do not have its metadata now."
               << dendl;
       // issue metadata request in background
+/** comment by hy 2020-01-19
+ * # 向mon发送下面的命令,和对应参数,返回对应结果
+ */
       fetch_missing_metadata(key, m->get_source_addr());
 
       locker.lock();
@@ -2169,6 +2175,9 @@ bool DaemonServer::_handle_command(
     cmdctx->reply(r, ss);
     return true;
   } else if (prefix == "device set-life-expectancy") {
+/** comment by hy 2020-09-17
+ * # 设置设备信息
+ */
     string devid;
     cmd_getval(cmdctx->cmdmap, "devid", devid);
     string from_str, to_str;

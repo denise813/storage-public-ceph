@@ -416,6 +416,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
 
     def _kick_serve_loop(self):
         self.log.debug('_kick_serve_loop')
+        # 调用者调用 sleep 由该方法唤醒
         self.event.set()
 
     # function responsible for logging single host into custom registry
@@ -1084,6 +1085,8 @@ To check that the host is reachable:
 
         :env_vars: in format -> [KEY=VALUE, ..]
         """
+        # 添加密码免检命令
+        #ssh-copy-id -f -i /etc/ceph/ceph.pub root@node2
         with self._remote_connection(host, addr) as tpl:
             conn, connr = tpl
             assert image or entity
@@ -1205,6 +1208,7 @@ To check that the host is reachable:
 
         :param host: host name
         """
+        # 卸载软件包
         self.inventory.rm_host(host)
         self.cache.rm_host(host)
         self._reset_con(host)
@@ -1330,6 +1334,7 @@ To check that the host is reachable:
                         events=self.events.get_for_service(spec.service_name()),
                     )
                 if n in self.spec_store.specs:
+				    # 这里进行分类
                     if dd.daemon_type == 'osd':
                         """
                         The osd count can't be determined by the Placement spec.
@@ -1642,6 +1647,7 @@ To check that the host is reachable:
         refresh_hosts = self.osd_service.resolve_hosts_for_osdspecs(specs=trigger_specs)
         for host in refresh_hosts:
             self.log.info(f"Marking host: {host} for OSDSpec preview refresh.")
+			# 这里加入队列进行执行
             self.cache.osdspec_previews_refresh_queue.append(host)
 
     @trivial_completion
@@ -1764,6 +1770,7 @@ To check that the host is reachable:
                 'Reconfiguring' if reconfig else 'Deploying',
                 daemon_spec.name(), daemon_spec.host))
 
+			# 调用 cephadm depoly 命令
             out, err, code = self._run_cephadm(
                 daemon_spec.host, daemon_spec.name(), 'deploy',
                 [
@@ -1910,11 +1917,13 @@ To check that the host is reachable:
         if spec.service_type == 'host':
             return self._add_host(cast(HostSpec, spec))
 
+	# osd 的应用
         if spec.service_type == 'osd':
             # _trigger preview refresh needs to be smart and
             # should only refresh if a change has been detected
             self._trigger_preview_refresh(specs=[cast(DriveGroupSpec, spec)])
 
+	# 核心逻辑
         return self._apply_service_spec(cast(ServiceSpec, spec))
 
     def _plan(self, spec: ServiceSpec):
@@ -1978,6 +1987,7 @@ To check that the host is reachable:
             raise OrchestratorError('cannot scale %s service below 1' % (
                 spec.service_type))
 
+	# 处理 host 信息
         HostAssignment(
             spec=spec,
             hosts=self.inventory.all_specs(),  # All hosts, even those without daemon refresh
@@ -1986,7 +1996,9 @@ To check that the host is reachable:
 
         self.log.info('Saving service %s spec with placement %s' % (
             spec.service_name(), spec.placement.pretty_str()))
+        # 这里放数据
         self.spec_store.save(spec)
+        # 唤醒对应的线程等待
         self._kick_serve_loop()
         return "Scheduled %s update..." % spec.service_name()
 
@@ -1994,6 +2006,7 @@ To check that the host is reachable:
     def apply(self, specs: List[GenericSpec]) -> List[str]:
         results = []
         for spec in specs:
+	    # 调用应用
             results.append(self._apply(spec))
         return results
 
