@@ -485,6 +485,14 @@ void KernelDevice::_aio_stop()
   if (aio) {
     dout(10) << __func__ << dendl;
     aio_stop = true;
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+    {
+      if (aio_submitting == false) {
+        std::lock_guard l(aio_lock);
+        aio_queue_cond.notify_one();
+      }
+    }
+/* modify end by hy, 2020-09-02 */
     aio_thread.join();
     aio_stop = false;
     io_queue->shutdown();
@@ -543,6 +551,9 @@ void KernelDevice::_aio_thread()
 {
   dout(10) << __func__ << " start" << dendl;
   int inject_crash_count = 0;
+
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+  std::unique_lock l(aio_lock);
   while (!aio_stop) {
     dout(40) << __func__ << " polling" << dendl;
 /** comment by hy 2020-08-28
@@ -554,7 +565,14 @@ void KernelDevice::_aio_thread()
  * # 获取完成的aio 调用libaio相关的api，检查io是否完成
      bdev_aio_poll_ms 250 ms
  */
-    int r = io_queue->get_next_completed(cct->_conf->bdev_aio_poll_ms,
+    int  r = 0;
+    aio_submitting = true;
+    if (submit_counter == 0) {
+      aio_submitting = false;
+      aio_queue_cond.wait(l);
+    }
+    aio_submitting = true;
+    r = io_queue->get_next_completed(cct->_conf->bdev_aio_poll_ms,
 					 aio, max);
     if (r < 0) {
       derr << __func__ << " got " << cpp_strerror(r) << dendl;
@@ -632,6 +650,12 @@ void KernelDevice::_aio_thread()
  * # 取得对应的值
  */
 	if (ioc->priv) {
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+/** comment by hy 2020-09-02
+ * # 已经运行内存
+ */
+      --submit_counter;
+ /* modify begin by hy, 2020-09-02 */
 	  if (--ioc->num_running == 0) {
 /** comment by hy 2020-04-22
  * # 调用aio完成的回调函数,这里处理延迟写的回调,或事务回调
@@ -839,6 +863,9 @@ void KernelDevice::aio_submit(IOContext *ioc)
   ioc->running_aios.splice(e, ioc->pending_aios);
 
   int pending = ioc->num_pending.load();
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+  submit_counter += pending;
+/* modify end by hy, 2020-09-02 */
   ioc->num_running += pending;
   ioc->num_pending -= pending;
   ceph_assert(ioc->num_pending.load() == 0);  // we should be only thread doing this
@@ -868,6 +895,17 @@ void KernelDevice::aio_submit(IOContext *ioc)
     derr << " aio submit got " << cpp_strerror(r) << dendl;
     ceph_assert(r == 0);
   }
+
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 1
+  {
+    if (aio_submitting == false) {
+      std::lock_guard l(aio_lock);
+      aio_queue_cond.notify_one();
+    }
+  }
+#endif
+/* modify end by hy, 2020-09-02 */
 }
 
 int KernelDevice::_sync_write(uint64_t off, bufferlist &bl, bool buffered, int write_hint)

@@ -7104,17 +7104,12 @@ int BlueStore::mkfs()
     _sync_bluefs_and_fm();
   }
 
-  // build tire cache 
-  tire->format(path, db);
-
  out_close_fm:
   _close_fm();
  out_close_db:
   _close_db(false);
  out_close_bdev:
   _close_bdev();
- out_close_tire:
-  _close_tire();
  out_close_fsid:
   _close_fsid();
  out_path_fd:
@@ -10611,7 +10606,13 @@ int BlueStore::_do_read(
 /** comment by hy 2020-09-02
  * # 等待异步确认完成
  */
-    ioc.aio_wait();
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 1
+    if (ioc.num_running) {
+      ioc.aio_wait();
+    }
+#endif
+/* modify end by hy, 2020-09-02 */
     r = ioc.get_return_value();
     if (r < 0) {
       ceph_assert(r == -EIO); // no other errors allowed
@@ -10965,7 +10966,11 @@ int BlueStore::_do_readv(
     num_ios = ioc.get_num_ios();
     bdev->aio_submit(&ioc);
     dout(20) << __func__ << " waiting for aio" << dendl;
-    ioc.aio_wait();
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+    if (ioc.num_running) {
+      ioc.aio_wait();
+    }
+/* modify end by hy, 2020-09-02 */
     r = ioc.get_return_value();
     if (r < 0) {
       ceph_assert(r == -EIO); // no other errors allowed
@@ -12835,6 +12840,8 @@ void BlueStore::_kv_sync_thread()
 /** comment by hy 2020-04-24
  * # 处理 deferred_done_queue
  */
+     auto end_flush = start;
+     auto begin_flush = start;
       if (force_flush) {
 	dout(20) << __func__ << " num_aios=" << aios
 		 << " force_flush=" << (int)force_flush
@@ -12847,7 +12854,11 @@ void BlueStore::_kv_sync_thread()
      我认为已经使用了libaio,其他的情况下还是因为是写在缓冲中还是有必要的
      而不是posix aio所以这个flush就不必要了
  */
-	bdev->flush();
+        begin_flush = mono_clock::now();
+/* modify begin by hy 2020-04-24 因为使用的是libaio 所以认为数据盘的下盘不需要再同步下盘了 */
+        //bdev->flush();
+/* modify end by hy 2020-04-24 */
+        end_flush = mono_clock::now();
 
 	// if we flush then deferred done are now deferred stable
 	deferred_stable.insert(deferred_stable.end(), deferred_done.begin(),
@@ -12993,6 +13004,7 @@ void BlueStore::_kv_sync_thread()
       auto begin_kv = mono_clock::now();
       int r = cct->_conf->bluestore_debug_omit_kv_commit ? 0 : db->submit_transaction_sync(synct);
       ceph_assert(r == 0);
+      auto end_kv = mono_clock::now();
 
       int committing_size = kv_committing.size();
       int deferred_size = deferred_stable.size();
@@ -13057,8 +13069,8 @@ void BlueStore::_kv_sync_thread()
 
       {
 	auto finish = mono_clock::now();
-	ceph::timespan dur_flush = after_flush - start;
-	ceph::timespan dur_kv = finish - after_flush;
+	ceph::timespan dur_flush = end_flush - begin_flush;
+	ceph::timespan dur_kv = end_kv - begin_kv;
 	ceph::timespan dur = finish - start;
 	dout(20) << __func__ << " committed " << committing_size
 	  << " cleaned " << deferred_size

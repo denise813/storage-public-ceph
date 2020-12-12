@@ -2972,10 +2972,12 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_STARTUP)
     .set_description("The number of cache shards to use in the object store."),
 
+/* modify begin by hy, 2020-09-08, BugId:123 原因: 副本同步读优化 */
     Option("osd_op_num_threads_per_shard", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(0)
+    .set_default(1)
     .set_flag(Option::FLAG_STARTUP)
     .set_description(""),
+/* modify end by hy, 2020-09-08 */
 
     Option("osd_op_num_threads_per_shard_hdd", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(1)
@@ -2989,10 +2991,12 @@ std::vector<Option> get_global_options() {
     .set_description("")
     .add_see_also("osd_op_num_threads_per_shard"),
 
+/* modify begin by hy, 2020-09-08, BugId:123 原因: 副本同步读优化 */
     Option("osd_op_num_shards", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(0)
+    .set_default(16)
     .set_flag(Option::FLAG_STARTUP)
     .set_description(""),
+/* modify end by hy, 2020-09-08 */
 
     Option("osd_op_num_shards_hdd", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(5)
