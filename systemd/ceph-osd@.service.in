@@ -10,7 +10,7 @@ LimitNOFILE=1048576
 LimitNPROC=1048576
 EnvironmentFile=-@SYSTEMD_ENV_FILE@
 Environment=CLUSTER=ceph
-ExecStart=/usr/bin/ceph-osd -f --cluster ${CLUSTER} --id %i --setuser ceph --setgroup ceph
+ExecStart=/usr/bin/ceph-osd -f --cluster ${CLUSTER} --id %i --setuser root --setgroup root
 ExecStartPre=/usr/lib/ceph/ceph-osd-prestart.sh --cluster ${CLUSTER} --id %i
 ExecReload=/bin/kill -HUP $MAINPID
 LockPersonality=true
@@ -29,6 +29,11 @@ Restart=on-failure
 StartLimitInterval=30min
 StartLimitBurst=3
 RestartSec=10
+#CPUAffinity=14 15 16 17 18 19 20 21 22 23 24 25 26 27
+nice=-20
+#CPUQuota=20%
+#MemoryLimit=500M
+#LimitRSS=1073741824
 
 [Install]
 WantedBy=ceph-osd.target

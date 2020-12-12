@@ -75,10 +75,14 @@ def get_ceph_user_ids():
     Return the id and gid of the ceph user
     """
     try:
-        user = pwd.getpwnam('ceph')
+        # modify begin by hy, 2020-12-12, BugId:123 原因: root 启动
+        user = pwd.getpwnam('root')
+        # modify end by hy, 2020-12-12
     except KeyError:
         # is this even possible?
-        raise RuntimeError('"ceph" user is not available in the current system')
+        # modify begin by hy, 2020-12-12, BugId:123 原因: root 启动
+        raise RuntimeError('"root" user is not available in the current system')
+        # modify end by hy, 2020-12-12
     return user[2], user[3]
 
 
@@ -115,15 +119,16 @@ def chown(path, recursive=True):
     """
     ``chown`` a path to the ceph user (uid and guid fetched at runtime)
     """
+    # modify begin by hy, 2020-12-12, BugId:123 原因: root 启动
     uid, gid = get_ceph_user_ids()
     if os.path.islink(path):
-        process.run(['chown', '-h', 'ceph:ceph', path])
+        process.run(['chown', '-h', 'root:root', path])
         path = os.path.realpath(path)
     if recursive:
-        process.run(['chown', '-R', 'ceph:ceph', path])
+        process.run(['chown', '-R', 'root:root', path])
     else:
         os.chown(path, uid, gid)
-
+    # modify end by hy, 2020-12-12
 
 def is_binary(path):
     """

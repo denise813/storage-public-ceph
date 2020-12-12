@@ -46,4 +46,16 @@ def create_parser(prog, description):
         action='store_true',
         help='Enable device encryption via dm-crypt',
     )
+    # modify begin by hy, 2020-12-12, BugId:123 原因: root 启动
+    parser.add_argument(
+        '--osd-id',
+        dest='osd_id',
+        help='The ID of the OSD, usually an integer, like 0',
+    )
+    parser.add_argument(
+        '--osd-fsid',
+        dest='osd_fsid',
+        help='The fsid of the OSD, usually uuid, like 00-00-00-00-00',
+    )
+    # modify end by hy, 2020-12-12
     return parser
