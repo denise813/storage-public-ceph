@@ -56,6 +56,9 @@ KernelDevice::KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv, ai
   fd_buffereds.resize(WRITE_LIFE_MAX, -1);
 
   bool use_ioring = g_ceph_context->_conf.get_val<bool>("bluestore_ioring");
+/** comment by hy 2020-08-18
+ * # 默认1024
+ */
   unsigned int iodepth = cct->_conf->bdev_aio_max_queue_depth;
 
   if (use_ioring && ioring_queue_t::supported()) {
@@ -74,7 +77,10 @@ KernelDevice::KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv, ai
 int KernelDevice::_lock()
 {
   dout(10) << __func__ << " " << fd_directs[WRITE_LIFE_NOT_SET] << dendl;
-  int r = ::flock(fd_directs[WRITE_LIFE_NOT_SET], LOCK_EX | LOCK_NB);
+/* modify begin by hy, 2020-08-25, BugId:123 原因: 修改为阻塞模式*/
+  //int r = ::flock(fd_directs[WRITE_LIFE_NOT_SET], LOCK_EX | LOCK_NB);
+  int r = ::flock(fd_directs[WRITE_LIFE_NOT_SET], LOCK_EX);
+/* modify end by hy, 2020-08-25 */
   if (r < 0) {
     derr << __func__ << " flock failed on " << path << dendl;
     return -errno;
@@ -94,6 +100,9 @@ int KernelDevice::open(const string& p)
       r = -errno;
       break;
     }
+/** comment by hy 2020-04-22
+ * # 分别以fd_direct/fd_buffered方式打开块设备
+ */
     fd_directs[i] = fd;
 
     fd  = ::open(path.c_str(), O_RDWR | O_CLOEXEC);
@@ -101,6 +110,9 @@ int KernelDevice::open(const string& p)
       r = -errno;
       break;
     }
+/** comment by hy 2020-04-22
+ * # 分别以fd_direct/fd_buffered方式打开块设备
+ */
     fd_buffereds[i] = fd;
   }
 
@@ -134,6 +146,10 @@ int KernelDevice::open(const string& p)
 
   // disable readahead as it will wreak havoc on our mix of
   // directio/aio and buffered io.
+/** comment by hy 2020-08-03
+ * # 对文件进行预取的系统调用
+     将要进行随机操作 表示 禁止预读
+ */
   r = posix_fadvise(fd_buffereds[WRITE_LIFE_NOT_SET], 0, 0, POSIX_FADV_RANDOM);
   if (r) {
     r = -r;
@@ -162,6 +178,9 @@ int KernelDevice::open(const string& p)
   // blksize doesn't strictly matter except that some file systems may
   // require a read/modify/write if we write something smaller than
   // it.
+/** comment by hy 2020-04-22
+ * # 读取block size等参数
+ */
   block_size = cct->_conf->bdev_block_size;
   if (block_size != (unsigned)st.st_blksize) {
     dout(1) << __func__ << " backing device/file reports st_blksize "
@@ -196,14 +215,24 @@ int KernelDevice::open(const string& p)
       rotational = blkdev_buffered.is_rotational();
       support_discard = blkdev_buffered.support_discard();
       this->devname = devname;
+/** comment by hy 2020-08-31
+ * # 检查 VDO 设备 vdo 
+     设备是重删技术的磁盘,是红帽开发的在centos 8
+     yum install vdo
+ */
       _detect_vdo();
     }
   }
-
+/** comment by hy 2020-04-22
+ * # 如果是aio，初始化aio相关参数，并启动aio线程
+ */
   r = _aio_start();
   if (r < 0) {
     goto out_fail;
   }
+/** comment by hy 2020-09-05
+ * # 开启 discard 线程
+ */
   _discard_start();
 
   // round size down to an even block
@@ -393,7 +422,11 @@ int KernelDevice::flush()
   // stable on disk: whichever thread sees the flag first will block
   // followers until the aio is stable.
   std::lock_guard l(flush_mutex);
-
+/** comment by hy 2020-04-24
+ * # 如果 io_since_flush 为false 则没有要sync的数据，直接退出
+     有写就会变成 sync
+     compare_exchange_strong 等同比较
+ */
   bool expect = true;
   if (!io_since_flush.compare_exchange_strong(expect, false)) {
     dout(10) << __func__ << " no-op (no ios since last flush), flag is "
@@ -413,6 +446,9 @@ int KernelDevice::flush()
     _exit(1);
   }
   utime_t start = ceph_clock_now();
+/** comment by hy 2020-04-24
+ * # 调用 fdatasync 同步数据到磁盘
+ */
   int r = ::fdatasync(fd_directs[WRITE_LIFE_NOT_SET]);
   utime_t end = ceph_clock_now();
   utime_t dur = end - start;
@@ -509,8 +545,15 @@ void KernelDevice::_aio_thread()
   int inject_crash_count = 0;
   while (!aio_stop) {
     dout(40) << __func__ << " polling" << dendl;
+/** comment by hy 2020-08-28
+ * # bdev_aio_reap_max = 16
+ */
     int max = cct->_conf->bdev_aio_reap_max;
     aio_t *aio[max];
+/** comment by hy 2020-04-22
+ * # 获取完成的aio 调用libaio相关的api，检查io是否完成
+     bdev_aio_poll_ms 250 ms
+ */
     int r = io_queue->get_next_completed(cct->_conf->bdev_aio_poll_ms,
 					 aio, max);
     if (r < 0) {
@@ -533,6 +576,11 @@ void KernelDevice::_aio_thread()
 	// that an earlier, racing flush() could observe and clear this
 	// flag, but that also ensures that the IO will be stable before the
 	// later flush() occurs.
+/** comment by hy 2020-04-24
+ * # 设置 io_since_flush 为true，既表示数据写
+     元数据写 需要这个标志位完成设的时候一起做
+     fdatasync
+ */
 	io_since_flush.store(true);
 
 	long r = aio[i]->get_return_value();
@@ -580,11 +628,25 @@ void KernelDevice::_aio_thread()
 	// NOTE: once num_running and we either call the callback or
 	// call aio_wake we cannot touch ioc or aio[] as the caller
 	// may free it.
+/** comment by hy 2020-09-02
+ * # 取得对应的值
+ */
 	if (ioc->priv) {
 	  if (--ioc->num_running == 0) {
+/** comment by hy 2020-04-22
+ * # 调用aio完成的回调函数,这里处理延迟写的回调,或事务回调
+      既调用 aio_cb
+                 BlueStore::TransContext::aio_finish
+                 BlueStore::DeferredBatch::aio_finish
+      事务回调是触发状态机继续下一步
+      延迟写回调从延迟事务中找到下一批继续提交
+ */
 	    aio_callback(aio_callback_priv, ioc->priv);
 	  }
 	} else {
+/** comment by hy 2020-09-02
+ * # 读操作唤醒
+ */
           ioc->try_aio_wake();
 	}
       }
@@ -634,6 +696,11 @@ void KernelDevice::_discard_thread()
   discard_cond.notify_all();
   while (true) {
     ceph_assert(discard_finishing.empty());
+/** comment by hy 2020-04-24
+ * # 如果没有需要做Discard的Extent就等待
+     https://shimingyah.github.io/2019/07/%E6%B5%85%E8%B0%88%E5%88%86%E5%B8%83%E5%
+BC%8F%E5%AD%98%E5%82%A8%E4%B9%8BSSD%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86/
+ */
     if (discard_queued.empty()) {
       if (discard_stop)
 	break;
@@ -646,10 +713,16 @@ void KernelDevice::_discard_thread()
       discard_running = true;
       l.unlock();
       dout(20) << __func__ << " finishing" << dendl;
+/** comment by hy 2020-04-24
+ * # 对需要做Discard的Extent依次调用discard函数
+ */
       for (auto p = discard_finishing.begin();p != discard_finishing.end(); ++p) {
 	discard(p.get_start(), p.get_len());
       }
 
+/** comment by hy 2020-11-20
+ * # 调用器对应的回调函数 BlueStore::handle_discard
+ */
       discard_callback(discard_callback_priv, static_cast<void*>(&discard_finishing));
       discard_finishing.clear();
       l.lock();
@@ -669,6 +742,9 @@ int KernelDevice::queue_discard(interval_set<uint64_t> &to_release)
     return 0;
 
   std::lock_guard l(discard_lock);
+/** comment by hy 2020-04-24
+ * # 插入需要做Discard的Extent
+ */
   discard_queued.insert(to_release);
   discard_cond.notify_all();
   return 0;
@@ -756,6 +832,9 @@ void KernelDevice::aio_submit(IOContext *ioc)
   // move these aside, and get our end iterator position now, as the
   // aios might complete as soon as they are submitted and queue more
   // wal aio's.
+/** comment by hy 2020-04-22
+ * # 获取pending的aio
+ */
   list<aio_t>::iterator e = ioc->running_aios.begin();
   ioc->running_aios.splice(e, ioc->pending_aios);
 
@@ -776,6 +855,10 @@ void KernelDevice::aio_submit(IOContext *ioc)
 
   void *priv = static_cast<void*>(ioc);
   int r, retries = 0;
+/** comment by hy 2020-04-22
+ * # 批量提交aio
+     aio_queue_t::submit_batch
+ */
   r = io_queue->submit_batch(ioc->running_aios.begin(), e,
 			     pending, priv, &retries);
 
@@ -806,6 +889,9 @@ int KernelDevice::_sync_write(uint64_t off, bufferlist &bl, bool buffered, int w
   auto o = off;
   size_t idx = 0;
   do {
+/** comment by hy 2020-02-05
+ * # 调用pwritev写入PageCache
+ */
     auto r = ::pwritev(choose_fd(buffered, write_hint),
       &iov[idx], iov.size() - idx, o);
 
@@ -834,8 +920,14 @@ int KernelDevice::_sync_write(uint64_t off, bufferlist &bl, bool buffered, int w
   } while (left);
 
 #ifdef HAVE_SYNC_FILE_RANGE
+/** comment by hy 2020-02-05
+ * # 预防掉电
+ */
   if (buffered) {
     // initiate IO and wait till it completes
+/** comment by hy 2020-04-24
+ * # 强制数据落盘才返回
+ */
     auto r = ::sync_file_range(fd_buffereds[WRITE_LIFE_NOT_SET], off, len, SYNC_FILE_RANGE_WRITE|SYNC_FILE_RANGE_WAIT_AFTER|SYNC_FILE_RANGE_WAIT_BEFORE);
     if (r < 0) {
       r = -errno;
@@ -850,6 +942,9 @@ int KernelDevice::_sync_write(uint64_t off, bufferlist &bl, bool buffered, int w
   return 0;
 }
 
+/** comment by hy 2020-08-02
+ * # BlueFs 文件sync, 同步文件等场合
+ */
 int KernelDevice::write(
   uint64_t off,
   bufferlist &bl,
@@ -904,10 +999,19 @@ int KernelDevice::aio_write(
   bl.hexdump(*_dout);
   *_dout << dendl;
 
+/** comment by hy 2020-02-05
+ * # 调试信息?
+ */
   _aio_log_start(ioc, off, len);
 
 #ifdef HAVE_LIBAIO
+/** comment by hy 2020-08-02
+ * # 使用异步io 的前提 直接io 与 对齐
+ */
   if (aio && dio && !buffered) {
+/** comment by hy 2020-08-02
+ * # 测试
+ */
     if (cct->_conf->bdev_inject_crash &&
 	rand() % cct->_conf->bdev_inject_crash == 0) {
       derr << __func__ << " bdev_inject_crash: dropping io 0x" << std::hex
@@ -921,9 +1025,18 @@ int KernelDevice::aio_write(
       bufferptr p = buffer::create_small_page_aligned(len);
       aio.bl.append(std::move(p));
       aio.bl.prepare_iov(&aio.iov);
+/** comment by hy 2020-08-02
+ * # aio_t::preadv 包装数据
+ */
       aio.preadv(off, len);
       ++injecting_crash;
     } else {
+/** comment by hy 2020-08-02
+ * # 正常流程
+ */
+/** comment by hy 2020-08-02
+ * # 小于 page
+ */
       if (bl.length() <= RW_IO_MAX) {
 	// fast path (non-huge write)
 	ioc->pending_aios.push_back(aio_t(ioc, choose_fd(false, write_hint)));
@@ -931,6 +1044,9 @@ int KernelDevice::aio_write(
 	auto& aio = ioc->pending_aios.back();
 	bl.prepare_iov(&aio.iov);
 	aio.bl.claim_append(bl);
+/** comment by hy 2020-02-05
+ * # 调用 io_prep_pwrite
+ */
 	aio.pwritev(off, len);
 	dout(30) << aio << dendl;
 	dout(5) << __func__ << " 0x" << std::hex << off << "~" << len
@@ -946,11 +1062,20 @@ int KernelDevice::aio_write(
 	    tmp.substr_of(bl, prev_len, bl.length() - prev_len);
 	  }
 	  auto len = tmp.length();
+/** comment by hy 2020-04-22
+ * #  放入IOContext的pending队列，等待执行
+ */
 	  ioc->pending_aios.push_back(aio_t(ioc, choose_fd(false, write_hint)));
 	  ++ioc->num_pending;
+/** comment by hy 2020-04-22
+ * # 将待写入的数据准备在aio的buffer中
+ */
 	  auto& aio = ioc->pending_aios.back();
 	  tmp.prepare_iov(&aio.iov);
 	  aio.bl.claim_append(tmp);
+/** comment by hy 2020-04-22
+ * # 调用 libaio io_prep_pwrite
+ */
 	  aio.pwritev(off + prev_len, len);
 	  dout(30) << aio << dendl;
 	  dout(5) << __func__ << " 0x" << std::hex << off + prev_len
@@ -1003,6 +1128,9 @@ int KernelDevice::read(uint64_t off, uint64_t len, bufferlist *pbl,
   auto start1 = mono_clock::now();
 
   auto p = buffer::ptr_node::create(buffer::create_small_page_aligned(len));
+/** comment by hy 2020-09-09
+ * # 这里要是变成异步会提高性能
+ */
   int r = ::pread(buffered ? fd_buffereds[WRITE_LIFE_NOT_SET] : fd_directs[WRITE_LIFE_NOT_SET],
 		  p->c_str(), len, off);
   auto age = cct->_conf->bdev_debug_aio_log_age;
@@ -1094,6 +1222,9 @@ int KernelDevice::direct_read_unaligned(uint64_t off, uint64_t len, char *buf)
     goto out;
   }
   ceph_assert((uint64_t)r == aligned_len);
+/** comment by hy 2020-09-09
+ * # 拷贝其内容
+ */
   memcpy(buf, p.c_str() + (off - aligned_off), len);
 
   dout(40) << __func__ << " data: ";
@@ -1131,6 +1262,9 @@ int KernelDevice::read_random(uint64_t off, uint64_t len, char *buf,
     char *t = buf;
     uint64_t left = len;
     while (left > 0) {
+/** comment by hy 2020-09-09
+ * # 这里要是变成异步会提高性能
+ */
       r = ::pread(fd_buffereds[WRITE_LIFE_NOT_SET], t, left, off);
       if (r < 0) {
 	r = -errno;
@@ -1151,6 +1285,9 @@ int KernelDevice::read_random(uint64_t off, uint64_t len, char *buf,
     }
   } else {
     //direct and aligned read
+/** comment by hy 2020-09-09
+ * # 这里要是变成异步会提高性能
+ */
     r = ::pread(fd_directs[WRITE_LIFE_NOT_SET], buf, len, off);
     if (mono_clock::now() - start1 >= make_timespan(age)) {
       derr << __func__ << " stalled read "

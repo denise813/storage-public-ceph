@@ -74,6 +74,7 @@ private:
 
 public:
   CephContext* cct;
+  // 回调中 包含aio_finish 方法的类
   void *priv;
 #ifdef HAVE_SPDK
   void *nvme_task_first = nullptr;
@@ -82,7 +83,13 @@ public:
 #endif
 
 #if defined(HAVE_LIBAIO) || defined(HAVE_POSIXAIO)
+/** comment by hy 2020-04-22
+ * # 待执行的aio
+ */
   std::list<aio_t> pending_aios;    ///< not yet submitted
+/** comment by hy 2020-04-22
+ * # 正在执行的aio
+ */
   std::list<aio_t> running_aios;    ///< submitting or submitted
 #endif
   std::atomic_int num_pending = {0};

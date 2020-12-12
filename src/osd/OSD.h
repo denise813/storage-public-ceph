@@ -378,6 +378,10 @@ private:
   struct AgentThread : public Thread {
     OSDService *osd;
     explicit AgentThread(OSDService *o) : osd(o) {}
+/** comment by hy 2020-08-27
+ * # agent 表示缓存处理模块
+     这里下盘和清理的过程
+ */
     void *entry() override {
       osd->agent_entry();
       return NULL;
@@ -1726,6 +1730,9 @@ protected:
 
 public:
   // -- shards --
+/** comment by hy 2020-03-20
+ * # 
+ */
   vector<OSDShard*> shards;
   uint32_t num_shards = 0;
 

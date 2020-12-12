@@ -156,6 +156,9 @@ void Mgr::background_init(Context *completion)
   finisher.start();
 
   finisher.queue(new LambdaContext([this, completion](int r){
+/** comment by hy 2020-07-31
+ * # 调用初始化函数
+ */
     init();
     completion->complete(0);
   }));
@@ -189,6 +192,14 @@ std::map<std::string, std::string> Mgr::load_store()
       Command get_cmd;
       std::ostringstream cmd_json;
       cmd_json << "{\"prefix\": \"config-key get\", \"key\": \"" << key << "\"}";
+/** comment by hy 2020-09-17
+ * # 向mon发送命令, 命令为 prefix config-key get device/
+     信息由 set-life-expectancy 而来
+     这个是 diskprediction_local 模块 中的
+     模块启动是 serve
+     predict_all_devices->_set_device_life_expectancy
+     而这些是来至于初始化 向mon 发送获取 osd metadata 信息的命令加载而来
+ */
       get_cmd.run(monc, cmd_json.str());
       lock.unlock();
       get_cmd.wait();
@@ -276,6 +287,9 @@ void Mgr::init()
   lock.lock();
 
   // Start communicating with daemons to learn statistics etc
+/** comment by hy 2020-07-31
+ * # 初始化 服务端
+ */
   int r = server.init(monc->get_global_id(), client_messenger->get_myaddrs());
   if (r < 0) {
     derr << "Initialize server fail: " << cpp_strerror(r) << dendl;
@@ -289,6 +303,9 @@ void Mgr::init()
   // up to date by watching maps, so do the initial load before
   // we subscribe to any maps)
   dout(4) << "Loading daemon metadata..." << dendl;
+/** comment by hy 2020-07-31
+ * # 加载所有元数据
+ */
   load_all_metadata();
 
   // Populate PGs in ClusterState
@@ -560,6 +577,9 @@ bool Mgr::ms_dispatch2(const ref_t<Message>& m)
       objecter->maybe_request_map();
       break;
     case MSG_SERVICE_MAP:
+/** comment by hy 2020-10-10
+ * # 服务程序的map信息
+ */
       handle_service_map(ref_cast<MServiceMap>(m));
       py_module_registry->notify_all("service_map", "");
       break;

@@ -183,8 +183,17 @@ public:
     MEMPOOL_CLASS_HELPERS();
 
     enum {
+/** comment by hy 2020-02-27
+ * # 没有保存任何数据
+ */
       STATE_EMPTY,     ///< empty buffer -- used for cache history
+/** comment by hy 2020-02-27
+ * # 保存干净的数据
+ */
       STATE_CLEAN,     ///< clean data that is up to date
+/** comment by hy 2020-02-27
+ * # 当前保存了脏数据,写完转化为CLEAN
+ */
       STATE_WRITING,   ///< data that is being written (io not yet complete)
     };
     static const char *get_state_name(int s) {
@@ -206,15 +215,39 @@ public:
       }
     }
 
+/** comment by hy 2020-02-23
+ * # 表明自身属于哪个 BufferSpace 实例
+ */
     BufferSpace *space;
+/** comment by hy 2020-02-23
+ * # STATE_EMPTY buffer 当前保存任何数据(已经被淘汰,buffer 目前位于Alout队列中)
+     STATE_CLEAN buffer 当前保存干净数据(buffer没有被修改,并且磁盘数据一致)
+ */
     uint16_t state;             ///< STATE_*
+/** comment by hy 2020-02-23
+ * # 当buffer 存在于cache 中时,当前位于哪个队列
+ */
     uint16_t cache_private = 0; ///< opaque (to us) value used by Cache impl
+/** comment by hy 2020-02-23
+ * # FLAG_NOCACHE 写入的数据不是热点数据,写操作完成后直接释放,不放入缓存
+ */
     uint32_t flags;             ///< FLAG_*
+/** comment by hy 2020-02-23
+ * # 对应写操作的序号
+ */
     uint64_t seq;
+/** comment by hy 2020-02-23
+ * # 数据三元组
+ */
     uint32_t offset, length;
     bufferlist data;
-
+/** comment by hy 2020-02-27
+ * # 将buffer插入Cache的数据缓存队列
+ */
     boost::intrusive::list_member_hook<> lru_item;
+/** comment by hy 2020-02-27
+ * # 插入对应BufferSpace中的writing_list
+ */
     boost::intrusive::list_member_hook<> state_item;
 
     Buffer(BufferSpace *space, unsigned s, uint64_t q, uint32_t o, uint32_t l,
@@ -280,12 +313,20 @@ public:
 	boost::intrusive::list_member_hook<>,
 	&Buffer::state_item> > state_list_t;
 
+/** comment by hy 2020-02-23
+ * # 查找表
+ */
     mempool::bluestore_cache_meta::map<uint32_t, std::unique_ptr<Buffer>>
       buffer_map;
 
     // we use a bare intrusive list here instead of std::map because
     // it uses less memory and we expect this to be very small (very
     // few IOs in flight to the same Blob at the same time).
+/** comment by hy 2020-02-23
+ * # 包含脏数据的缓存队列
+     所有归属同一个Blob并且当前状态为BUFFER_SRITING的
+     Buffer使用同一个wrtiing_list
+ */
     state_list_t writing;   ///< writing buffers, sorted by seq, ascending
 
     ~BufferSpace() {
@@ -354,22 +395,36 @@ public:
       cache->_trim();
       return ret;
     }
+/** comment by hy 2020-02-27
+ * # 丢弃指定范围
+ */
     int _discard(BufferCacheShard* cache, uint32_t offset, uint32_t length);
-
+/** comment by hy 2020-02-27
+ * # 向BufferSpace中写入指定偏移和长度的脏数据
+ */
     void write(BufferCacheShard* cache, uint64_t seq, uint32_t offset, bufferlist& bl,
 	       unsigned flags) {
       std::lock_guard l(cache->lock);
+/** comment by hy 2020-02-05
+ * # 生成一段buffer,加入缓存中
+ */
       Buffer *b = new Buffer(this, Buffer::STATE_WRITING, seq, offset, bl,
 			     flags);
       b->cache_private = _discard(cache, offset, bl.length());
       _add_buffer(cache, b, (flags & Buffer::FLAG_NOCACHE) ? 0 : 1, nullptr);
       cache->_trim();
     }
+/** comment by hy 2020-02-27
+ * # 当写完成时,调用本方法将相关的Buffer从writing_list,同时设置为CLEAN状态
+ */
     void _finish_write(BufferCacheShard* cache, uint64_t seq);
     void did_read(BufferCacheShard* cache, uint32_t offset, bufferlist& bl) {
       std::lock_guard l(cache->lock);
       Buffer *b = new Buffer(this, Buffer::STATE_CLEAN, 0, offset, bl);
       b->cache_private = _discard(cache, offset, bl.length());
+/** comment by hy 2020-04-22
+ * # 加入cache
+ */
       _add_buffer(cache, b, 1, nullptr);
       cache->_trim();
     }
@@ -412,6 +467,9 @@ public:
       uint64_t sbid_unloaded;              ///< sbid if persistent isn't loaded
       bluestore_shared_blob_t *persistent; ///< persistent part of the shared blob if any
     };
+/** comment by hy 2020-05-31
+ * # 里面包含 Bluestore::Buffer
+ */
     BufferSpace bc;             ///< buffer cache
 
     SharedBlob(Collection *_coll) : coll(_coll), sbid_unloaded(0) {
@@ -463,6 +521,9 @@ public:
   typedef boost::intrusive_ptr<SharedBlob> SharedBlobRef;
 
   /// a lookup table of SharedBlobs
+/** comment by hy 2020-09-09
+ * # 公用的blob 集合
+ */
   struct SharedBlobSet {
     /// protect lookup, insertion, removal
     ceph::mutex lock = ceph::make_mutex("BlueStore::SharedBlobSet::lock");
@@ -520,9 +581,15 @@ public:
     std::atomic_int nref = {0};     ///< reference count
     int16_t id = -1;                ///< id, for spanning blobs only, >= 0
     int16_t last_encoded_id = -1;   ///< (ephemeral) used during encoding only
+/** comment by hy 2020-07-29
+ * # 磁盘数据块
+ */
     SharedBlobRef shared_blob;      ///< shared blob state (if any)
 
   private:
+/** comment by hy 2020-07-29
+ * # 描述数据块信息
+ */
     mutable bluestore_blob_t blob;  ///< decoded blob metadata
 #ifdef CACHE_BLOB_BL
     mutable bufferlist blob_bl;     ///< cached encoded blob, blob is dirty if empty
@@ -690,9 +757,19 @@ public:
   typedef boost::intrusive::set_base_hook<boost::intrusive::optimize_size<true> > ExtentBase; //making an alias to avoid build warnings
   struct Extent : public ExtentBase {
     MEMPOOL_CLASS_HELPERS();
-
+/** comment by hy 2020-04-24
+ * # 对象内逻辑偏移，不需要块对齐
+ */
     uint32_t logical_offset = 0;      ///< logical offset
+/** comment by hy 2020-04-24
+ * # 当logical_offset是块对齐时，blob_offset始终为0
+     不是块对齐时，将逻辑段内的数据通过Blob映射到
+     磁盘物理段会产生物理段内的偏移称为blob_offset
+ */
     uint32_t blob_offset = 0;         ///< blob offset
+/** comment by hy 2020-04-24
+ * # 逻辑段长度，不需要块对齐
+ */
     uint32_t length = 0;              ///< length
     BlobRef  blob;                    ///< the blob with our data
 
@@ -865,6 +942,9 @@ public:
       size_t mid, left = 0;
       size_t right = end; // one passed the right end
 
+/** comment by hy 2020-09-01
+ * # 二分查找范围
+ */
       while (left < right) {
         mid = left + (right - left) / 2;
         if (offset >= shards[mid].shard_info->offset) {
@@ -1055,6 +1135,9 @@ public:
     MEMPOOL_CLASS_HELPERS();
 
     std::atomic_int nref;  ///< reference count
+/** comment by hy 2020-04-24
+ * # onode 对应的PG
+ */
     Collection *c;
     ghobject_t oid;
 
@@ -1062,7 +1145,9 @@ public:
     mempool::bluestore_cache_meta::string key;
 
     boost::intrusive::list_member_hook<> lru_item;
-
+/** comment by hy 2020-04-24
+ * # onode磁盘数据结构
+ */
     bluestore_onode_t onode;  ///< metadata stored as value in kv store
     bool exists;              ///< true if object logically exists
     bool cached;              ///< Onode is logically in the cache
@@ -1070,6 +1155,15 @@ public:
                               /// of it at the moment though)
     bool pinned;              ///< Onode is pinned
                               /// (or should be pinned when cached)
+/** comment by hy 2020-04-24
+ * # 有序的Extent逻辑空间集合，持久化在RocksDB。lexetnt--->blob
+ *   由于支持稀疏写，所以extent map中的extent可以是不连续的，即存在空洞。
+ *   也即前一个extent的结束地址小于后一个extent的起始地址。
+ *   如果单个对象内的extent过多(小块随机写多、磁盘碎片化严重)
+ *   那么ExtentMap会很大，严重影响RocksDB的访问效率
+ *   所以需要对ExtentMap分片即shard_info，同时也会合并相邻的小段。
+ *   好处可以按需加载，减少内存占用量等。
+ */
     ExtentMap extent_map;
 
     // track txc's that have not been committed to kv store (and whose
@@ -1279,10 +1373,16 @@ public:
   };
 
   struct OnodeSpace {
+/** comment by hy 2020-02-27
+ * # 表明自身归属于哪个cache实例
+ */
     OnodeCacheShard *cache;
 
   private:
     /// forward lookups
+/** comment by hy 2020-02-23
+ * # 查找表
+ */
     mempool::bluestore_cache_meta::unordered_map<ghobject_t,OnodeRef> onode_map;
 
     friend class Collection; // for split_cache()
@@ -1315,8 +1415,17 @@ public:
 
   struct Collection : public CollectionImpl {
     BlueStore *store;
+/** comment by hy 2020-04-24
+ * # 每个PG有一个osr，在BlueStore层面保证读写事物的顺序性和并发性
+ */
     OpSequencerRef osr;
+/** comment by hy 2020-04-24
+ * # PG对应的 cache shard
+ */
     BufferCacheShard *cache;       ///< our cache shard
+/** comment by hy 2020-04-24
+ * # pg的磁盘结构
+ */
     bluestore_cnode_t cnode;
     ceph::shared_mutex lock =
       ceph::make_shared_mutex("BlueStore::Collection::lock", true, false);
@@ -1575,7 +1684,10 @@ public:
     interval_set<uint64_t> allocated, released;
     volatile_statfs statfs_delta;	   ///< overall store statistics delta
     uint64_t osd_pool_id = META_POOL_ID;    ///< osd pool id we're operating on
-    
+
+/** comment by hy 2020-09-13
+ * # 延迟写io
+ */
     IOContext ioc;
     bool had_ios = false;  ///< true if we submitted IOs before our kv txn
 
@@ -1751,6 +1863,9 @@ public:
       bufferlist bl;    ///< data
       uint64_t seq;     ///< deferred transaction seq
     };
+/** comment by hy 2020-12-05
+ * # 一次提交的信息, offt , data
+ */
     map<uint64_t,deferred_io> iomap; ///< map of ios in this batch
     deferred_queue_t txcs;           ///< txcs in this batch
     IOContext ioc;                   ///< our aios
@@ -1783,6 +1898,10 @@ public:
         TransContext,
 	boost::intrusive::list_member_hook<>,
 	&TransContext::sequencer_item> > q_list_t;
+/** comment by hy 2020-07-14
+ * # 插入的事务上下文列表, TransContext
+     里面包含 数据库事务
+ */
     q_list_t q;  ///< transactions
 
     boost::intrusive::list_member_hook<> deferred_osr_queue_item;
@@ -1956,6 +2075,13 @@ private:
   utime_t next_dump_on_bluefs_alloc_failure;
 
   KeyValueDB *db = nullptr;
+/** comment by hy 2020-08-02
+ * # block 数据设备
+ */
+/** comment by hy 2020-09-18
+ * # 这里我想改成多个设备,每个设备怎么分
+     故障如何处理
+ */
   BlockDevice *bdev = nullptr;
   std::string freelist_type;
   FreelistManager *fm = nullptr;
@@ -1968,6 +2094,9 @@ private:
   ceph::shared_mutex coll_lock = ceph::make_shared_mutex("BlueStore::coll_lock");  ///< rwlock to protect coll_map
   mempool::bluestore_cache_other::unordered_map<coll_t, CollectionRef> coll_map;
   bool collections_had_errors = false;
+/** comment by hy 2020-02-03
+ * # 用来做新创建记录的缓存?
+ */
   map<coll_t,CollectionRef> new_coll_map;
 
   vector<OnodeCacheShard*> onode_cache_shards;
@@ -2387,8 +2516,17 @@ public:
     mempool::bluestore_fsck::map<uint64_t, store_statfs_t>;
 
   enum FSCKDepth {
+/** comment by hy 2020-05-29
+ * # 判断元数据
+ */
     FSCK_REGULAR,
+/** comment by hy 2020-05-29
+ * # 判断对象
+ */
     FSCK_DEEP,
+/** comment by hy 2020-05-29
+ * # 判断容器是否存在
+ */
     FSCK_SHALLOW
   };
   enum {
@@ -2422,8 +2560,15 @@ private:
     uint64_t offset,
     bufferlist& bl,
     unsigned flags) {
+/** comment by hy 2020-02-05
+ * # 这个buff cache 是不是相当于磁盘缓存?
+     BluStore::BufferSpace::write,这里就可以理解为数据了
+ */
     b->shared_blob->bc.write(b->shared_blob->get_cache(), txc->seq, offset, bl,
 			     flags);
+/** comment by hy 2020-05-31
+ * # 标记已经写过
+ */
     txc->shared_blobs_written.insert(b->shared_blob);
   }
 
@@ -2692,6 +2837,7 @@ private:
     bool* csum_error,
     bufferlist& bl);
 
+/* modify begin by hy, 2020-09-07, BugId:123 原因: */
   int _do_read(
     Collection *c,
     OnodeRef o,
@@ -2700,6 +2846,7 @@ private:
     bufferlist& bl,
     uint32_t op_flags = 0,
     uint64_t retry_count = 0);
+/* modify end by hy, 2020-09-07 */
 
   int _do_readv(
     Collection *c,
@@ -3005,7 +3152,9 @@ private:
 
     old_extent_map_t old_extents;   ///< must deref these blobs
     interval_set<uint64_t> extents_to_gc; ///< extents for garbage collection
-
+/** comment by hy 2020-04-24
+ * # 写的条目
+ */
     struct write_item {
       uint64_t logical_offset;      ///< write logical offset
       BlobRef b;
@@ -3052,6 +3201,9 @@ private:
       target_blob_size = other.target_blob_size;
       csum_order = other.csum_order;
     }
+/** comment by hy 2020-04-24
+ * # bluestore大小写都会调用，向writes这个vector里面插入一条write_item
+ */
     void write(
       uint64_t loffs,
       BlobRef b,

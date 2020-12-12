@@ -80,13 +80,46 @@ MEMPOOL_DEFINE_OBJECT_FACTORY(BlueStore::TransContext, bluestore_transcontext,
 
 
 // kv store prefixes
+/** comment by hy 2020-08-30
+ * # sb 信息
+     blobid_max
+     bluefs_extents
+     bluefs_extents_back
+     freelist_type
+     ...
+ */
 const string PREFIX_SUPER = "S";       // field -> value
+/** comment by hy 2020-08-30
+ * # fs status
+ */
 const string PREFIX_STAT = "T";        // field -> value(int64 array)
+/** comment by hy 2020-08-30
+ * # 
+ */
 const string PREFIX_COLL = "C";        // collection name -> cnode_t
+/** comment by hy 2020-08-06
+ * # object 信息
+     osdmap, inc_osdmap osd_superblock
+     21pg_num_history
+     purged_snaps
+     extentmap
+     share
+     onode
+     也是对象
+ */
 const string PREFIX_OBJ = "O";         // object name -> onode_t
+/** comment by hy 2020-08-06
+ * # object 元数据信息
+ */
 const string PREFIX_OMAP = "M";        // u64 + keyname -> value
 const string PREFIX_PGMETA_OMAP = "P"; // u64 + keyname -> value(for meta coll)
+/** comment by hy 2020-08-30
+ * # pool omap
+ */
 const string PREFIX_PERPOOL_OMAP = "m"; // s64 + u64 + keyname -> value
+/** comment by hy 2020-08-30
+ * # 延迟的事务 key 为 seq
+ */
 const string PREFIX_DEFERRED = "L";    // id -> deferred_transaction_t
 const string PREFIX_ALLOC = "B";       // u64 offset -> u64 length (freelist)
 const string PREFIX_ALLOC_BITMAP = "b";// (see BitmapFreelistManager)
@@ -522,10 +555,20 @@ static void generate_extent_shard_key_and_apply(
 {
   if (key->empty()) { // make full key
     ceph_assert(!onode_key.empty());
+/** comment by hy 2020-07-29
+ * # 偏移信息编码保存
+ */
     get_extent_shard_key(onode_key, offset, key);
   } else {
+/** comment by hy 2020-07-29
+ * # 加上上一段信息一起进行编码
+ */
     rewrite_extent_shard_key(offset, key);
   }
+/** comment by hy 2020-07-29
+ * # apply 表示传入的
+     lamba 函数 从 数据库中加载 数据 从而到内存中
+ */
   apply(*key);
 }
 
@@ -1762,6 +1805,9 @@ void BlueStore::BufferSpace::_finish_write(BufferCacheShard* cache, uint64_t seq
     Buffer *b = &*i;
     ceph_assert(b->is_writing());
 
+/** comment by hy 2020-04-22
+ * # 直接删除
+ */
     if (b->flags & Buffer::FLAG_NOCACHE) {
       writing.erase(i++);
       ldout(cache->cct, 20) << __func__ << " discard " << *b << dendl;
@@ -1771,10 +1817,16 @@ void BlueStore::BufferSpace::_finish_write(BufferCacheShard* cache, uint64_t seq
       writing.erase(i++);
       b->maybe_rebuild();
       b->data.reassign_to_mempool(mempool::mempool_bluestore_cache_data);
+/** comment by hy 2020-04-22
+ * # 加入cache 这里是不是可以作为添加缓冲设计的入口之一
+ */
       cache->_add(b, 1, nullptr);
       ldout(cache->cct, 20) << __func__ << " added " << *b << dendl;
     }
   }
+/** comment by hy 2020-08-15
+ * # 执行 trim
+ */
   cache->_trim();
   cache->_audit("finish_write end");
 }
@@ -3068,6 +3120,9 @@ unsigned BlueStore::ExtentMap::decode_some(bufferlist& bl)
   unsigned n = 0;
 
   while (!p.end()) {
+/** comment by hy 2020-07-29
+ * # Extent 对应的是文件的偏移
+ */
     Extent *le = new Extent();
     uint64_t blobid;
     denc_varint(blobid, p);
@@ -3085,8 +3140,12 @@ unsigned BlueStore::ExtentMap::decode_some(bufferlist& bl)
     if ((blobid & BLOBID_FLAG_SAMELENGTH) == 0) {
       denc_varint_lowz(prev_len, p);
     }
+
     le->length = prev_len;
 
+/** comment by hy 2020-09-01
+ * # blob 是 共用 的
+ */
     if (blobid & BLOBID_FLAG_SPANNING) {
       dout(30) << __func__ << "  getting spanning blob "
 	       << (blobid >> BLOBID_SHIFT_BITS) << dendl;
@@ -3097,11 +3156,20 @@ unsigned BlueStore::ExtentMap::decode_some(bufferlist& bl)
 	le->assign_blob(blobs[blobid - 1]);
 	ceph_assert(le->blob);
       } else {
+/** comment by hy 2020-07-29
+ * # blob 独立的
+ */
 	Blob *b = new Blob();
         uint64_t sbid = 0;
         b->decode(onode->c, p, struct_v, &sbid, false);
 	blobs[n] = b;
+/** comment by hy 2020-07-29
+ * # 加载 share blob 对应的信息
+ */
 	onode->c->open_shared_blob(sbid, b);
+/** comment by hy 2020-09-01
+ * # 加载到内存中
+ */
 	le->assign_blob(b);
       }
       // we build ref_map dynamically for non-spanning blobs
@@ -3193,6 +3261,9 @@ void BlueStore::ExtentMap::fault_range(
 {
   dout(30) << __func__ << " 0x" << std::hex << offset << "~" << length
 	   << std::dec << dendl;
+/** comment by hy 2020-09-01
+ * # 从缓存的 share 中 获取对应的 share id
+ */
   auto start = seek_shard(offset);
   auto last = seek_shard(offset + length);
 
@@ -3204,10 +3275,19 @@ void BlueStore::ExtentMap::fault_range(
   while (start <= last) {
     ceph_assert((size_t)start < shards.size());
     auto p = &shards[start];
+/** comment by hy 2020-09-01
+ * # 加载对应的 share
+ */
     if (!p->loaded) {
       dout(30) << __func__ << " opening shard 0x" << std::hex
 	       << p->shard_info->offset << std::dec << dendl;
       bufferlist v;
+/** comment by hy 2020-07-12
+ * # 生成 extent key,然后通过key对应的范围获取 share 对应的数据
+     这里可能一下子加载比较多的数据
+     怎么处理? 对于rbd 测试 将 objsize 设置为 小一点
+     目前来看 1M 合适?
+ */
       generate_extent_shard_key_and_apply(
 	onode->key, p->shard_info->offset, &key,
         [&](const string& final_key) {
@@ -3220,6 +3300,9 @@ void BlueStore::ExtentMap::fault_range(
           }
         }
       );
+/** comment by hy 2020-09-01
+ * # 生成内存结构, 里面存放为 extent->blob 信息
+ */
       p->extents = decode_some(v);
       p->loaded = true;
       dout(20) << __func__ << " open shard 0x" << std::hex
@@ -3696,9 +3779,15 @@ void BlueStore::DeferredBatch::prepare_write(
   bufferlist::const_iterator& blp)
 {
   _discard(cct, offset, length);
+/** comment by hy 2020-05-31
+ * # 更新iomap deferred_io 包含 seq 和数据
+ */
   auto i = iomap.insert(make_pair(offset, deferred_io()));
   ceph_assert(i.second);  // this should be a new insertion
   i.first->second.seq = seq;
+/** comment by hy 2020-12-05
+ * # blp 数据
+ */
   blp.copy(length, i.first->second.bl);
   i.first->second.bl.reassign_to_mempool(
     mempool::mempool_bluestore_writing_deferred);
@@ -3833,6 +3922,10 @@ void BlueStore::Collection::open_shared_blob(uint64_t sbid, BlobRef b)
     return;
   }
 
+/** comment by hy 2020-09-01
+ * # 非独立的,从集合中获取，对应的子号
+     0 表示没找到
+ */
   b->shared_blob = shared_blob_set.lookup(sbid);
   if (b->shared_blob) {
     ldout(store->cct, 10) << __func__ << " sbid 0x" << std::hex << sbid
@@ -3924,10 +4017,15 @@ BlueStore::OnodeRef BlueStore::Collection::get_onode(
     }
   }
 
+/** comment by hy 2020-04-22
+ * # 缓冲中查找map
+ */
   OnodeRef o = onode_map.lookup(oid);
   if (o)
     return o;
-
+/** comment by hy 2020-07-12
+ * # 开始磁盘中查找
+ */
   string key;
   get_object_key(store->cct, oid, &key);
 
@@ -3938,6 +4036,9 @@ BlueStore::OnodeRef BlueStore::Collection::get_onode(
   int r = -ENOENT;
   Onode *on;
   if (!is_createop) {
+/** comment by hy 2020-02-05
+ * # 从数据库 k/v系统加载元信息 中获取
+ */
     r = store->db->get(PREFIX_OBJ, key.c_str(), key.size(), &v);
     ldout(store->cct, 20) << " r " << r << " v.len " << v.length() << dendl;
   }
@@ -3955,6 +4056,9 @@ BlueStore::OnodeRef BlueStore::Collection::get_onode(
     on = Onode::decode(this, oid, key, v);
   }
   o.reset(on);
+/** comment by hy 2020-02-05
+ * # 添加到缓存 map 中
+ */
   return onode_map.add(oid, o);
 }
 
@@ -4047,6 +4151,10 @@ void BlueStore::Collection::split_cache(
 
 void *BlueStore::MempoolThread::entry()
 {
+/** comment by hy 2020-04-22
+ * # 超过内存规定的限制就做trim
+     这里是不是可以改造为磁盘缓冲?
+ */
   std::unique_lock l{lock};
 
   uint32_t prev_config_change = store->config_changed.load();
@@ -4134,8 +4242,13 @@ void *BlueStore::MempoolThread::entry()
     // Now Resize the shards 
     _resize_shards(interval_stats_trim);
     interval_stats_trim = false;
-
+/** comment by hy 2020-04-22
+ * # 通过参数计算出trim的目标,执行trim
+ */
     store->_update_cache_logger();
+/** comment by hy 2020-04-24
+ * # 定时唤醒执行trim
+ */
     auto wait = ceph::make_timespan(
       store->cct->_conf->bluestore_cache_trim_interval);
     cond.wait_for(l, wait);
@@ -4398,7 +4511,14 @@ bufferlist BlueStore::OmapIteratorImpl::value()
 static void aio_cb(void *priv, void *priv2)
 {
   BlueStore *store = static_cast<BlueStore*>(priv);
+/** comment by hy 2020-09-01
+ * # 使用基类进行转化
+ */
   BlueStore::AioContext *c = static_cast<BlueStore::AioContext*>(priv2);
+/** comment by hy 2020-10-21
+ * #   BlueStore::TransContext::aio_finish
+       BlueStore::DeferredBatch::aio_finish
+ */
   c->aio_finish(store);
 }
 
@@ -4433,6 +4553,9 @@ BlueStore::BlueStore(CephContext *cct,
 {
   _init_logger();
   cct->_conf.add_observer(this);
+/** comment by hy 2020-04-24
+ * # 初始化cache
+ */
   set_cache_shards(1);
 }
 
@@ -5000,7 +5123,9 @@ int BlueStore::_write_bdev_label(CephContext *cct,
   bufferptr z(BDEV_LABEL_BLOCK_SIZE - bl.length());
   z.zero();
   bl.append(std::move(z));
-
+/** comment by hy 2020-06-22
+ * # 写道临时文件,下盘？
+ */
   int fd = TEMP_FAILURE_RETRY(::open(path.c_str(), O_WRONLY|O_CLOEXEC));
   if (fd < 0) {
     fd = -errno;
@@ -5077,6 +5202,9 @@ int BlueStore::_check_or_set_bdev_label(
     label.size = size;
     label.btime = ceph_clock_now();
     label.description = desc;
+/** comment by hy 2020-06-22
+ * # 生成临时文件作为id 写下磁盘
+ */
     int r = _write_bdev_label(cct, path, label);
     if (r < 0)
       return r;
@@ -5135,11 +5263,20 @@ int BlueStore::_open_bdev(bool create)
 {
   ceph_assert(bdev == NULL);
   string p = path + "/block";
+
+/** comment by hy 2020-08-31
+ * # 设置延迟的时候调用 aio_cb
+ */
   bdev = BlockDevice::create(cct, p, aio_cb, static_cast<void*>(this), discard_cb, static_cast<void*>(this));
   int r = bdev->open(p);
   if (r < 0)
     goto fail;
 
+/** comment by hy 2020-07-28
+ * # NVMEDevice
+     KernelDevice
+     size block size 是在open 里面进行设置
+ */
   if (create && cct->_conf->bdev_enable_discard) {
     bdev->discard(0, bdev->get_size());
   }
@@ -5155,8 +5292,16 @@ int BlueStore::_open_bdev(bool create)
   block_mask = ~(block_size - 1);
   block_size_order = ctz(block_size);
   ceph_assert(block_size == 1u << block_size_order);
+
+  // 在这里添加判断打开缓存盘 默认的缓存盘名称等于 cache
+/** comment by hy 2020-06-22
+ * # 设置延迟处理
+ */
   _set_max_defer_interval();
   // and set cache_size based on device type
+/** comment by hy 2020-06-22
+ * # 设置设备缓冲
+ */
   r = _set_cache_sizes();
   if (r < 0) {
     goto fail_close;
@@ -5202,9 +5347,16 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
   bluestore_bdev_label_t label;
 
   ceph_assert(fm == NULL);
+  // 配置文件中将设置 为缓存的空闲管理
+  // 默认的设置在这里进行修改,这里初始化的时候将
+  // 两个设备需要传入便宜操作
+  // (缓存以及后端设备都要搞进去,约定的两个链接)
   fm = FreelistManager::create(cct, freelist_type, PREFIX_ALLOC);
   ceph_assert(fm);
   if (t) {
+/** comment by hy 2020-11-18
+ * # 这里可以认为磁盘头
+ */
     // create mode. initialize freespace
     dout(20) << __func__ << " initializing freespace" << dendl;
     {
@@ -5214,13 +5366,29 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
     }
     // being able to allocate in units less than bdev block size 
     // seems to be a bad idea.
+/** comment by hy 2020-04-22
+ * # 第一次初始化，需要固化meta参数
+ */
     ceph_assert( cct->_conf->bdev_block_size <= (int64_t)min_alloc_size);
+/** comment by hy 2020-09-13
+ * # BitmapFreelistManager::create
+ */
+/** comment by hy 2020-11-18
+ * # 这里分级存储的空闲块管理,接口不变分级存储就自己获取来处理
+     也就是说第一个参数只能忽略
+ */
     fm->create(bdev->get_size(), (int64_t)min_alloc_size, t);
 
     // allocate superblock reserved space.  note that we do not mark
     // bluefs space as allocated in the freelist; we instead rely on
     // bluefs_extents.
     auto reserved = _get_ondisk_reserved();
+/** comment by hy 2020-11-18
+ * # 进行保留分配
+     分级存储这个地方在
+     后端设备以及缓存设备都预留一定的空间
+     这里 0 是一个特别的标识
+ */
     fm->allocate(0, reserved, t);
 
     if (cct->_conf->bluestore_bluefs) {
@@ -5231,6 +5399,9 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
 	       << " for bluefs" << dendl;
     }
 
+/** comment by hy 2020-11-18
+ * # 将数据填充满
+ */
     if (cct->_conf->bluestore_debug_prefill > 0) {
       uint64_t end = bdev->get_size() - reserved;
       dout(1) << __func__ << " pre-fragmenting freespace, using "
@@ -5242,6 +5413,9 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
       r /= 1.0 - r;
       bool stop = false;
 
+/** comment by hy 2020-11-18
+ * # 对齐
+ */
       while (!stop && start < end) {
 	uint64_t l = (rand() % max_b + 1) * min_alloc_size;
 	if (start + l > end) {
@@ -5272,6 +5446,9 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
 	start += l + u;
       }
     }
+/** comment by hy 2020-11-18
+ * # 这里下到数据盘中
+ */
     r = _write_out_fm_meta(0, false, &label);
     ceph_assert(r == 0);
   } else {
@@ -5284,6 +5461,9 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
       return r;
     }
   }
+/** comment by hy 2020-11-18
+ * # 
+ */
   r = fm->init(label, db, read_only);
   if (r < 0) {
     derr << __func__ << " freelist init failed: " << cpp_strerror(r) << dendl;
@@ -5296,6 +5476,9 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
   // in data loss and/or assertions
   // Probably user altered the device size somehow.
   // The only fix for now is to redeploy OSD.
+/** comment by hy 2020-11-18
+ * # 
+ */
   if (fm->get_size() >= bdev->get_size() + min_alloc_size) {
     ostringstream ss;
     ss << "slow device size mismatch detected, "
@@ -5351,6 +5534,9 @@ int BlueStore::_open_alloc()
 
   if (bluefs) {
     bluefs_extents.clear();
+/** comment by hy 2020-11-18
+ * # 分配中的获取信息
+ */
     auto r = bluefs->get_block_extents(bluefs_layout.shared_bdev,
                                        &bluefs_extents);
     if (r < 0) {
@@ -5364,6 +5550,9 @@ int BlueStore::_open_alloc()
 	     << dendl;
   }
 
+/** comment by hy 2020-11-18
+ * # 磁盘分配
+ */
   alloc = Allocator::create(cct, cct->_conf->bluestore_allocator,
                             bdev->get_size(),
                             min_alloc_size, "block");
@@ -5378,16 +5567,31 @@ int BlueStore::_open_alloc()
 
   dout(1) << __func__ << " opening allocation metadata" << dendl;
   // initialize from freelist
+/** comment by hy 2020-11-18
+ * # 清理游标
+ */
   fm->enumerate_reset();
   uint64_t offset, length;
+/** comment by hy 2020-11-18
+ * # 下一个有效偏移，可以理解为有数据段信息
+ */
   while (fm->enumerate_next(db, &offset, &length)) {
+/** comment by hy 2020-11-18
+ * # 分配空间, 这个用于标记分配情况
+ */
     alloc->init_add_free(offset, length);
     ++num;
     bytes += length;
   }
+/** comment by hy 2020-11-18
+ * # 清理游标
+ */
   fm->enumerate_reset();
 
   // also mark bluefs space as allocated
+/** comment by hy 2020-11-18
+ * # 这个 init_rm_free 和 init_add_free 有什么区别?
+ */
   for (auto e = bluefs_extents.begin(); e != bluefs_extents.end(); ++e) {
     alloc->init_rm_free(e.get_start(), e.get_len());
   }
@@ -5576,7 +5780,17 @@ int BlueStore::_minimal_open_bluefs(bool create)
   string bfn;
   struct stat st;
 
+/** comment by hy 2020-05-27
+ * # 加载block数据
+     假如设备有独立的数据库
+     数据使用 slow
+     如果没有 数据和数据库 同磁盘 记录 DB
+ */
   bfn = path + "/block.db";
+/** comment by hy 2020-08-19
+ * # 创建 db 设备以及对应的io上下文
+     bfn 是符号链接
+ */
   if (::stat(bfn.c_str(), &st) == 0) {
     r = bluefs->add_block_device(
       BlueFS::BDEV_DB, bfn,
@@ -5586,8 +5800,13 @@ int BlueStore::_minimal_open_bluefs(bool create)
             << cpp_strerror(r) << dendl;
       goto free_bluefs;
     }
-
+/** comment by hy 2020-06-22
+ * # 内核 block 支持,nvme 不支持
+ */
     if (bluefs->bdev_support_label(BlueFS::BDEV_DB)) {
+/** comment by hy 2020-06-22
+ * # 将 bluestore_bdev_label_t 信息下盘
+ */
       r = _check_or_set_bdev_label(
 	bfn,
 	bluefs->get_block_device_size(BlueFS::BDEV_DB),
@@ -5600,11 +5819,17 @@ int BlueStore::_minimal_open_bluefs(bool create)
       }
     }
     if (create) {
+/** comment by hy 2020-08-25
+ * # 添加对应的设备空间
+ */
       bluefs->add_block_extent(
 	BlueFS::BDEV_DB,
 	SUPER_RESERVED,
 	bluefs->get_block_device_size(BlueFS::BDEV_DB) - SUPER_RESERVED);
     }
+/** comment by hy 2020-08-11
+ * # 预留部分用于存放数据库
+ */
     bluefs_layout.shared_bdev = BlueFS::BDEV_SLOW;
     bluefs_layout.dedicated_db = true;
   } else {
@@ -5622,6 +5847,9 @@ int BlueStore::_minimal_open_bluefs(bool create)
   // shared device
   bfn = path + "/block";
   // never trim here
+/** comment by hy 2020-07-28
+ * # 将设备添加到对应的数组中并设置io上下文实例, 这是blue
+ */
   r = bluefs->add_block_device(bluefs_layout.shared_bdev, bfn, false,
 			       true /* shared with bluestore */);
   if (r < 0) {
@@ -5631,6 +5859,11 @@ int BlueStore::_minimal_open_bluefs(bool create)
   }
   if (create) {
     // note: we always leave the first SUPER_RESERVED (8k) of the device unused
+/** comment by hy 2020-08-19
+ * # bluestore_bluefs_min_ratio 比例 2%
+     bluestore_bluefs_gift_ratio 比例 2%
+     bluestore_bluefs_min 1G
+ */
     uint64_t initial =
       bdev->get_size() * (cct->_conf->bluestore_bluefs_min_ratio +
 			  cct->_conf->bluestore_bluefs_gift_ratio);
@@ -5705,6 +5938,9 @@ free_bluefs:
 
 int BlueStore::_open_bluefs(bool create)
 {
+/** comment by hy 2020-06-22
+ * # 加载对应3种的设备
+ */
   int r = _minimal_open_bluefs(create);
   if (r < 0) {
     return r;
@@ -5715,6 +5951,10 @@ int BlueStore::_open_bluefs(bool create)
     string options = cct->_conf->bluestore_rocksdb_options;
 
     rocksdb::Options rocks_opts;
+
+/** comment by hy 2020-07-28
+ * # 数据库参数
+ */
     int r = RocksDBStore::ParseOptionsFromStringStatic(
       cct,
       options,
@@ -5725,6 +5965,18 @@ int BlueStore::_open_bluefs(bool create)
     }
 
     double reserved_factor = cct->_conf->bluestore_volume_selection_reserved_factor;
+/** comment by hy 2020-07-28
+ * # 磁盘配比,与磁盘预留,
+     wal_total
+     db_total
+     slow_total
+     level0_size
+     level_base
+     level_multiplier
+     reserved_factor
+     reserved
+     new_pol
+ */
     vselector =
       new RocksDBBlueFSVolumeSelector(
         bluefs->get_block_device_size(BlueFS::BDEV_WAL) * 95 / 100,
@@ -5738,9 +5990,15 @@ int BlueStore::_open_bluefs(bool create)
         cct->_conf->bluestore_volume_selection_policy != "rocksdb_original");
   }
   if (create) {
+/** comment by hy 2020-06-22
+ * # 初始化文件系统
+ */
     bluefs->mkfs(fsid, bluefs_layout);
   }
   bluefs->set_volume_selector(vselector);
+/** comment by hy 2020-08-25
+ * # 加载文件系统
+ */
   r = bluefs->mount();
   if (r < 0) {
     derr << __func__ << " failed bluefs mount: " << cpp_strerror(r) << dendl;
@@ -5806,6 +6064,9 @@ int BlueStore::_open_db_and_around(bool read_only)
       goto out_db;
     }
 
+/** comment by hy 2020-09-13
+ * # 设备的空间管理
+ */
     r = _open_fm(nullptr, true);
     if (r < 0)
       goto out_db;
@@ -5816,6 +6077,10 @@ int BlueStore::_open_db_and_around(bool read_only)
 
     // now open in R/W mode
     if (!read_only) {
+/** comment by hy 2020-05-29
+ * # 如果不是只读将的的东西刷新到磁盘中,
+     然后再次打开进行操作
+ */
       _close_db(true);
 
       r = _open_db(false, false, false);
@@ -5827,6 +6092,9 @@ int BlueStore::_open_db_and_around(bool read_only)
       fm->sync(db);
     }
   } else {
+/** comment by hy 2020-05-29
+ * # 已经存在的正常流程
+ */
     r = _open_db(false, false);
     if (r < 0) {
       return r;
@@ -5941,6 +6209,10 @@ int BlueStore::_open_db(bool create, bool to_repair_db, bool read_only)
 
   map<string,string> kv_options;
   // force separate wal dir for all new deployments.
+
+/** comment by hy 2020-05-27
+ * # 后续将在数据库中创建+ wal 路径
+ */
   kv_options["separate_wal_dir"] = 1;
   rocksdb::Env *env = NULL;
   if (do_bluefs) {
@@ -5950,11 +6222,18 @@ int BlueStore::_open_db(bool create, bool to_repair_db, bool read_only)
       return -EINVAL;
     }
 
+/** comment by hy 2020-04-22
+ * # 格式化文件系统，
+     主要工作包括生成文件系统的超级块/log文件等
+ */
     r = _open_bluefs(create);
     if (r < 0) {
       return r;
     }
 
+/** comment by hy 2020-06-22
+ * # bluestore_bluefs_env_mirror 测试使用
+ */
     if (cct->_conf->bluestore_bluefs_env_mirror) {
       rocksdb::Env* a = new BlueRocksEnv(bluefs);
       rocksdb::Env* b = rocksdb::Env::Default();
@@ -5974,6 +6253,10 @@ int BlueStore::_open_db(bool create, bool to_repair_db, bool read_only)
     }
     bluefs->set_slow_device_expander(this);
     BlueFSVolumeSelector::paths paths;
+/** comment by hy 2020-11-20
+ * # 这里返回 db 以及 db.slow, 是不是 slow 是数据盘?
+     path 里面是名称 和 空间大小
+ */
     bluefs->get_vselector_paths(fn, paths);
 
     if (bluefs_layout.shared_bdev == BlueFS::BDEV_SLOW) {
@@ -5986,9 +6269,15 @@ int BlueStore::_open_db(bool create, bool to_repair_db, bool read_only)
           db_paths << " ";
         }
         first = false;
+/** comment by hy 2020-11-20
+ * # 放入流中
+ */
         db_paths << p.first << "," << p.second;
 
       }
+/** comment by hy 2020-11-20
+ * # 这里多个路径的处理
+ */
       kv_options["db_paths"] = db_paths.str();
       dout(1) << __func__ << " set db_paths to " << db_paths.str() << dendl;
     }
@@ -6039,7 +6328,11 @@ int BlueStore::_open_db(bool create, bool to_repair_db, bool read_only)
     }
   }
 
-
+/** comment by hy 2020-05-27
+ * # rocksdb store 实例生成 fn = 数据库 dir
+     kv_options 
+     db = RocksDBStore
+ */
   db = KeyValueDB::create(cct,
 			  kv_backend,
 			  fn,
@@ -6059,6 +6352,10 @@ int BlueStore::_open_db(bool create, bool to_repair_db, bool read_only)
 
   FreelistManager::setup_merge_operators(db);
   db->set_merge_operator(PREFIX_STAT, merge_op);
+/** comment by hy 2020-07-28
+ * # cache_kv_ratio = conf->bluestore_cache_kv_ratio
+     cache_size = bluestore_cache_size_hdd
+ */
   db->set_cache_size(cache_kv_ratio * cache_size);
 
   if (kv_backend == "rocksdb") {
@@ -6075,6 +6372,9 @@ int BlueStore::_open_db(bool create, bool to_repair_db, bool read_only)
     }
   }
 
+/** comment by hy 2020-07-28
+ * # 数据库初始化
+ */
   db->init(options);
   if (to_repair_db)
     return 0;
@@ -6230,6 +6530,9 @@ int64_t BlueStore::_get_bluefs_size_delta(uint64_t bluefs_free, uint64_t bluefs_
 
   uint64_t gift = 0;
   uint64_t reclaim = 0;
+/** comment by hy 2020-09-05
+ * # 空闲比例到达阈值
+ */
   if (bluefs_ratio < cct->_conf->bluestore_bluefs_min_ratio) {
     gift = cct->_conf->bluestore_bluefs_gift_ratio * total_free;
     if (gift >= my_free)
@@ -6327,9 +6630,15 @@ int BlueStore::_balance_bluefs_freespace()
     dout(10) << __func__ << " reclaiming " << reclaim
 	     << " (" << byte_u_t(reclaim) << ")" << dendl;
 
+/** comment by hy 2020-09-05
+ * # 到达阈值
+ */
     while (reclaim > 0) {
       // NOTE: this will block and do IO.
       PExtentVector extents;
+/** comment by hy 2020-11-20
+ * # 
+ */
       int r = bluefs->reclaim_blocks(bluefs_layout.shared_bdev, reclaim,
 				     &extents);
       if (r < 0) {
@@ -6337,6 +6646,12 @@ int BlueStore::_balance_bluefs_freespace()
 	     << dendl;
 	break;
       }
+/** comment by hy 2020-09-05
+ * # 将需要清理的空间放入 bluefs_extents_reclaiming
+     由对应的线程进行清理,清理发生在两处,一处是 
+     discard_thread 线程
+     一处是 kv_sync 线程
+ */
       for (auto e : extents) {
 	++out_of_sync_fm;
 	bluefs_extents.erase(e.offset, e.length);
@@ -6357,16 +6672,25 @@ int BlueStore::_open_collections()
   collections_had_errors = false;
   ceph_assert(coll_map.empty());
   KeyValueDB::Iterator it = db->get_iterator(PREFIX_COLL);
+/** comment by hy 2020-04-22
+ * # 遍历pg对应的collection k/v元信息
+ */
   for (it->upper_bound(string());
        it->valid();
        it->next()) {
     coll_t cid;
     if (cid.parse(it->key())) {
+/** comment by hy 2020-04-22
+ * # 创建collection
+ */
       auto c = ceph::make_ref<Collection>(
 	  this,
 	  onode_cache_shards[cid.hash_to_shard(onode_cache_shards.size())],
           buffer_cache_shards[cid.hash_to_shard(buffer_cache_shards.size())],
 	  cid);
+/** comment by hy 2020-04-22
+ * # 获取对应的value
+ */
       bufferlist bl = it->value();
       auto p = bl.cbegin();
       try {
@@ -6379,6 +6703,9 @@ int BlueStore::_open_collections()
       dout(20) << __func__ << " opened " << cid << " " << c
 	       << " " << c->cnode << dendl;
       _osr_attach(c.get());
+/** comment by hy 2020-04-22
+ * # 更新collection map
+ */
       coll_map[cid] = c;
 
     } else {
@@ -6531,7 +6858,9 @@ int BlueStore::_setup_block_symlink_or_file(
 	  VOID_TEMP_FAILURE_RETRY(::close(fd));
 	  return r;
 	}
-
+/** comment by hy 2020-04-13
+ * # 预分配那件大小,使用128K buff 写文件
+ */
 	if (cct->_conf->bluestore_block_preallocate_file) {
           r = ::ceph_posix_fallocate(fd, 0, size);
           if (r > 0) {
@@ -6572,10 +6901,19 @@ int BlueStore::mkfs()
 
   {
     string done;
+/** comment by hy 2020-04-13
+ * # 已经格式化
+ */
     r = read_meta("mkfs_done", &done);
     if (r == 0) {
       dout(1) << __func__ << " already created" << dendl;
+/** comment by hy 2020-05-23
+ * # 在创建系统时检查文件系统
+ */
       if (cct->_conf->bluestore_fsck_on_mkfs) {
+/** comment by hy 2020-05-23
+ * # 用来检查和维护不一致的文件系统
+ */
         r = fsck(cct->_conf->bluestore_fsck_on_mkfs_deep);
         if (r < 0) {
           derr << __func__ << " fsck found fatal error: " << cpp_strerror(r)
@@ -6608,6 +6946,10 @@ int BlueStore::mkfs()
 
   freelist_type = "bitmap";
 
+/** comment by hy 2020-08-25
+ * # 检查 osd_max_object_size 小于 4GB
+     BlueStore 限制在 4GB 之内
+ */
   r = _open_path();
   if (r < 0)
     return r;
@@ -6639,17 +6981,27 @@ int BlueStore::mkfs()
     fsid = old_fsid;
   }
 
+/** comment by hy 2020-08-19
+ * # 设备连接, 在分级存储的场合 block 等于 缓存盘
+ */
   r = _setup_block_symlink_or_file("block", cct->_conf->bluestore_block_path,
 				   cct->_conf->bluestore_block_size,
 				   cct->_conf->bluestore_block_create);
   if (r < 0)
     goto out_close_fsid;
+
   if (cct->_conf->bluestore_bluefs) {
+/** comment by hy 2020-08-25
+ * # 创建 wal 符号链接文件
+ */
     r = _setup_block_symlink_or_file("block.wal", cct->_conf->bluestore_block_wal_path,
 	cct->_conf->bluestore_block_wal_size,
 	cct->_conf->bluestore_block_wal_create);
     if (r < 0)
       goto out_close_fsid;
+/** comment by hy 2020-08-25
+ * # 创建 db 符号链接文件
+ */
     r = _setup_block_symlink_or_file("block.db", cct->_conf->bluestore_block_db_path,
 	cct->_conf->bluestore_block_db_size,
 	cct->_conf->bluestore_block_db_create);
@@ -6657,6 +7009,9 @@ int BlueStore::mkfs()
       goto out_close_fsid;
   }
 
+/** comment by hy 2020-08-25
+ * # 创建设备, 分级存储的修改点
+ */
   r = _open_bdev(true);
   if (r < 0)
     goto out_close_fsid;
@@ -6672,6 +7027,9 @@ int BlueStore::mkfs()
       min_alloc_size = cct->_conf->bluestore_min_alloc_size_ssd;
     }
   }
+/** comment by hy 2020-11-19
+ * # 分级存储的修改点
+ */
   _validate_bdev();
 
   // make sure min_alloc_size is power of 2 aligned.
@@ -6684,12 +7042,20 @@ int BlueStore::mkfs()
     goto out_close_bdev;
   }
 
+/** !!!comment by hy 2020-08-25
+ * # 初始化 BlueFS 文件系统
+            bluestore 的 rocksdb 环境
+      重要流程
+ */
   r = _open_db(true);
   if (r < 0)
     goto out_close_bdev;
 
   {
     KeyValueDB::Transaction t = db->get_transaction();
+/** comment by hy 2020-08-25
+ * # 初始化空闲分配管理模块
+ */
     r = _open_fm(t, true);
     if (r < 0)
       goto out_close_db;
@@ -6712,6 +7078,9 @@ int BlueStore::mkfs()
     }
     ondisk_format = latest_ondisk_format;
     _prepare_ondisk_format_super(t);
+/** comment by hy 2020-11-20
+ * # 
+ */
     db->submit_transaction_sync(t);
   }
 
@@ -6735,12 +7104,17 @@ int BlueStore::mkfs()
     _sync_bluefs_and_fm();
   }
 
+  // build tire cache 
+  tire->format(path, db);
+
  out_close_fm:
   _close_fm();
  out_close_db:
   _close_db(false);
  out_close_bdev:
   _close_bdev();
+ out_close_tire:
+  _close_tire();
  out_close_fsid:
   _close_fsid();
  out_path_fd:
@@ -7173,16 +7547,35 @@ void BlueStore::set_cache_shards(unsigned num)
   buffer_cache_shards.resize(num);
   for (unsigned i = oold; i < num; ++i) {
     onode_cache_shards[i] = 
+/** comment by hy 2020-04-22
+ * # 不管选择什么都采用LRU
+ */
         OnodeCacheShard::create(cct, cct->_conf->bluestore_cache_type,
                                  logger);
   }
   for (unsigned i = bold; i < num; ++i) {
+/** comment by hy 2020-04-22
+ * # LRU 与 2Q配置文件选择 默认采用2Q
+ */
     buffer_cache_shards[i] = 
         BufferCacheShard::create(cct, cct->_conf->bluestore_cache_type,
                                  logger);
   }
 }
 
+/*****************************************************************************
+ * 函 数 名  : BlueStore._mount
+ * 负 责 人  : hy
+ * 创建日期  : 2020年5月29日
+ * 函数功能  :  
+ * 输入参数  : bool kv_only   
+               bool open_db  默认是打开db的
+ * 输出参数  : 无
+ * 返 回 值  : int
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 int BlueStore::_mount(bool kv_only, bool open_db)
 {
   dout(1) << __func__ << " path " << path << dendl;
@@ -7191,6 +7584,9 @@ int BlueStore::_mount(bool kv_only, bool open_db)
 
   {
     string type;
+/** comment by hy 2020-05-29
+ * # 从类型文件中加载从而判断是否正确
+ */
     int r = read_meta("type", &type);
     if (r < 0) {
       derr << __func__ << " failed to load os-type: " << cpp_strerror(r)
@@ -7231,19 +7627,29 @@ int BlueStore::_mount(bool kv_only, bool open_db)
   r = _read_fsid(&fsid);
   if (r < 0)
     goto out_fsid;
-
+/** comment by hy 2020-05-29
+ * # 占着系统
+ */
   r = _lock_fsid();
   if (r < 0)
     goto out_fsid;
-
+/** comment by hy 2020-05-29
+ * # 打开block 设备
+ */
   r = _open_bdev(false);
   if (r < 0)
     goto out_fsid;
 
   if (open_db) {
+/** comment by hy 2020-05-29
+ * # 打开数据信息流程
+ */
     r = _open_db_and_around(false);
   } else {
     // we can bypass db open exclusively in case of kv_only mode
+/** comment by hy 2020-05-29
+ * # 其他信息就不加载了
+ */
     ceph_assert(kv_only);
     r = _open_db(false, true);
   }
@@ -7281,6 +7687,9 @@ int BlueStore::_mount(bool kv_only, bool open_db)
     bool was_per_pool_omap = per_pool_omap;
 
     dout(1) << __func__ << " quick-fix on mount" << dendl;
+/** comment by hy 2020-09-11
+ * # 这里面有B+ 树
+ */
     _fsck_on_open(FSCK_SHALLOW, true);
 
     //reread statfs
@@ -8259,6 +8668,9 @@ void BlueStore::_fsck_check_objects(FSCKDepth depth,
             ++errors;
             continue; // go for next object
           }
+/** comment by hy 2020-09-11
+ * # 插入B+树
+ */
           used_nids.insert(o->onode.nid);
         }
         for (auto& i : referenced) {
@@ -8788,6 +9200,7 @@ int BlueStore::_fsck_on_open(BlueStore::FSCKDepth depth, bool repair)
 	      continue;
 	    }
 	    PExtentVector exts;
+            
 	    int64_t alloc_len = alloc->allocate(e->length, min_alloc_size,
 						0, 0, &exts);
 	    if (alloc_len < 0 || alloc_len < (int64_t)e->length) {
@@ -8810,6 +9223,7 @@ int BlueStore::_fsck_on_open(BlueStore::FSCKDepth depth, bool repair)
 
 	    bufferlist bl;
 	    IOContext ioc(cct, NULL, true); // allow EIO
+	    
 	    r = bdev->read(e->offset, e->length, &bl, &ioc, false);
 	    if (r < 0) {
 	      derr << __func__ << " failed to read from 0x" << std::hex << e->offset
@@ -9342,6 +9756,9 @@ int BlueStore::get_numa_node(
 {
   int node = -1;
   set<string> devices;
+/** comment by hy 2020-03-22
+ * # 获取设备
+ */
   get_devices(&devices);
   set<int> nodes;
   set<string> failed;
@@ -9727,6 +10144,10 @@ int BlueStore::read(
   uint32_t op_flags)
 {
   auto start = mono_clock::now();
+/** comment by hy 2020-07-12
+ * # 获取pg容器引用计数添加
+     加载pg 是在对象处理前处理
+ */
   Collection *c = static_cast<Collection *>(c_.get());
   const coll_t &cid = c->get_cid();
   dout(15) << __func__ << " " << cid << " " << oid
@@ -9740,6 +10161,9 @@ int BlueStore::read(
   {
     std::shared_lock l(c->lock);
     auto start1 = mono_clock::now();
+/** comment by hy 2020-07-12
+ * # 读取元数据
+ */
     OnodeRef o = c->get_onode(oid, false);
     log_latency("get_onode@read",
       l_bluestore_read_onode_meta_lat,
@@ -9750,9 +10174,30 @@ int BlueStore::read(
       goto out;
     }
 
+/** comment by hy 2020-08-15
+ * # 读全部
+ */
     if (offset == length && offset == 0)
       length = o->onode.size;
-
+/** comment by hy 2020-07-12
+ * # 处理数据
+ */
+/** comment by hy 2020-08-17
+ * # 1: (KernelDevice::aio_read(unsigned long, unsigned long, ceph::buffer::v15_2_0
+::list*, IOContext*)+0x1fc) [0x556c6a8c96d0]
+ 2: (()+0x2bed48f) [0x556c6a6f648f]
+ 3: (()+0x2c35975) [0x556c6a73e975]
+ 4: (BlueStore::_prepare_read_ioc(std::map<boost::intrusive_ptr<BlueStore::
+Blob>, std::__cxx11::list<BlueStore::read_req_t, std::allocator<BlueStore::
+read_req_t> >, std::less<boost::intrusive_ptr<BlueStore::Blob> >, std::
+allocator<std::pair<boost::intrusive_ptr<BlueStore::Blob> const, std::__cxx11
+::list<BlueStore::read_req_t, std::allocator<BlueStore::read_req_t> > > > >&, 
+std::vector<ceph::buffer::v15_2_0::list, std::allocator<ceph::buffer::v15_2_0
+::list> >*, IOContext*)+0x773) [0x556c6a6f6c47]
+ */
+/** comment by hy 2020-09-09
+ * # 缓冲盘处理读流程这里进行处理缓冲
+ */
     r = _do_read(c, o, offset, length, bl, op_flags);
     if (r == -EIO) {
       logger->inc(l_bluestore_read_eio);
@@ -9803,6 +10248,9 @@ void BlueStore::_read_cache(
       pos += hole;
       left -= hole;
     }
+/** comment by hy 2020-07-12
+ * # 生成对应的blob
+ */
     BlobRef& bptr = lp->blob;
     unsigned l_off = pos - lp->logical_offset;
     unsigned b_off = l_off + lp->blob_offset;
@@ -9810,6 +10258,9 @@ void BlueStore::_read_cache(
 
     ready_regions_t cache_res;
     interval_set<uint32_t> cache_interval;
+/** comment by hy 2020-06-26
+ * # 加载 sharedblob buffer 空间
+ */
     bptr->shared_blob->bc.read(
       bptr->shared_blob->get_cache(), b_off, b_len, cache_res, cache_interval,
       read_cache_policy);
@@ -9851,6 +10302,10 @@ void BlueStore::_read_cache(
             r_len += chunk_size - tail;
           }
           bool merged = false;
+
+/** comment by hy 2020-07-12
+ * # 对应的blob信息
+ */
           regions2read_t& r2r = blobs2read[bptr];
           if (r2r.size()) {
             read_req_t& pre = r2r.back();
@@ -9895,6 +10350,9 @@ int BlueStore::_prepare_read_ioc(
       }
       compressed_blob_bls->push_back(bufferlist());
       bufferlist& bl = compressed_blob_bls->back();
+/** comment by hy 2020-06-26
+ * # 读数据
+ */
       auto r = bptr->get_blob().map(
         0, bptr->get_blob().get_ondisk_length(),
         [&](uint64_t offset, uint64_t length) {
@@ -9912,6 +10370,9 @@ int BlueStore::_prepare_read_ioc(
         ceph_assert(r == 0);
       }
     } else {
+/** comment by hy 2020-09-07
+ * # 正常流程
+ */
       // read the pieces
       for (auto& req : r2r) {
         dout(20) << __func__ << "    region 0x" << std::hex
@@ -9974,10 +10435,16 @@ int BlueStore::_generate_read_result_bl(
         return -EIO;
       }
       bufferlist raw_bl;
+/** comment by hy 2020-06-26
+ * # 解压缓冲
+ */
       auto r = _decompress(compressed_bl, &raw_bl);
       if (r < 0)
         return r;
       if (buffered) {
+/** comment by hy 2020-06-26
+ * # 完成缓冲数据
+ */
         bptr->shared_blob->bc.did_read(bptr->shared_blob->get_cache(), 0,
                                        raw_bl);
       }
@@ -10063,6 +10530,10 @@ int BlueStore::_do_read(
 
   // generally, don't buffer anything, unless the client explicitly requests
   // it.
+/** comment by hy 2020-04-22
+ * # 设置是否缓存,默认读有缓存的,但是还要结合请求
+     这里是不是可以改造读取设备缓冲?
+ */
   bool buffered = false;
   if (op_flags & CEPH_OSD_OP_FLAG_FADVISE_WILLNEED) {
     dout(20) << __func__ << " will do buffered read" << dendl;
@@ -10079,6 +10550,9 @@ int BlueStore::_do_read(
   }
 
   auto start = mono_clock::now();
+/** comment by hy 2020-06-26
+ * # 获取对应的范围 key
+ */
   o->extent_map.fault_range(db, offset, length);
   log_latency(__func__,
     l_bluestore_read_onode_meta_lat,
@@ -10096,6 +10570,9 @@ int BlueStore::_do_read(
   // build blob-wise list to of stuff read (that isn't cached)
   ready_regions_t ready_regions;
   blobs2read_t blobs2read;
+/** comment by hy 2020-06-26
+ * # 加载blob缓存空间,等待写数据
+ */
   _read_cache(o, offset, length, read_cache_policy, ready_regions, blobs2read);
 
 
@@ -10104,17 +10581,36 @@ int BlueStore::_do_read(
                              // measure the whole block below.
                              // The error isn't that much...
   vector<bufferlist> compressed_blob_bls;
+/** comment by hy 2020-10-21
+ * # 创建一个读事务的ioc类,等待
+ */
   IOContext ioc(cct, NULL, true); // allow EIO
+/** comment by hy 2020-06-26
+ * # 包装异步aio读 根据blob 信息 加载数据
+ */
   r = _prepare_read_ioc(blobs2read, &compressed_blob_bls, &ioc);
   // we always issue aio for reading, so errors other than EIO are not allowed
   if (r < 0)
     return r;
 
   int64_t num_ios = length;
+/** comment by hy 2020-06-26
+ * # 写还没提交完成
+ */
+/** comment by hy 2020-08-16
+ * # 这里能没有提交完的数据就不管它不可以吗?
+     一批一批
+ */
   if (ioc.has_pending_aios()) {
     num_ios = -ioc.get_num_ios();
+/** comment by hy 2020-09-02
+ * # 提交读取的submit
+ */
     bdev->aio_submit(&ioc);
     dout(20) << __func__ << " waiting for aio" << dendl;
+/** comment by hy 2020-09-02
+ * # 等待异步确认完成
+ */
     ioc.aio_wait();
     r = ioc.get_return_value();
     if (r < 0) {
@@ -10130,6 +10626,9 @@ int BlueStore::_do_read(
   );
 
   bool csum_error = false;
+/** comment by hy 2020-06-26
+ * # 干净的缓冲,解压还原数据
+ */
   r = _generate_read_result_bl(o, offset, length, ready_regions,
                               compressed_blob_bls, blobs2read,
                               buffered, &csum_error, bl);
@@ -10728,6 +11227,9 @@ int BlueStore::_collection_list(
   if (!pnext)
     pnext = &static_next;
 
+/** comment by hy 2020-05-30
+ * # 没有了
+ */
   if (start.is_max() || start.hobj.is_max()) {
     goto out;
   }
@@ -10739,6 +11241,9 @@ int BlueStore::_collection_list(
     << " and " << coll_range_start
     << " to " << coll_range_end
     << " start " << start << dendl;
+/** comment by hy 2020-05-30
+ * # 迭代器
+ */
   if (legacy) {
     it = std::make_unique<SimpleCollectionListIterator>(
       cct, db->get_iterator(PREFIX_OBJ));
@@ -10762,6 +11267,9 @@ int BlueStore::_collection_list(
     dout(20) << __func__ << " temp=" << (int)temp << dendl;
     it->lower_bound(start);
   }
+/** comment by hy 2020-05-30
+ * # 结束了
+ */
   if (end.hobj.is_max()) {
     pend = temp ? coll_range_temp_end : coll_range_end;
   } else {
@@ -11391,8 +11899,18 @@ BlueStore::TransContext *BlueStore::_txc_create(
   Collection *c, OpSequencer *osr,
   list<Context*> *on_commits)
 {
+/** comment by hy 2020-03-02
+ * # 启动数据库事务上下文
+ */
   TransContext *txc = new TransContext(cct, c, osr, on_commits);
+/** comment by hy 2020-03-02
+ * # 获取对应的事务
+     生成 RocksDBTransactionImpl
+ */
   txc->t = db->get_transaction();
+/** comment by hy 2020-03-02
+ * # 将事务放入执行操作序列列表中
+ */
   osr->queue_new(txc);
   dout(20) << __func__ << " osr " << osr << " = " << txc
 	   << " seq " << txc->seq << dendl;
@@ -11403,7 +11921,15 @@ void BlueStore::_txc_calc_cost(TransContext *txc)
 {
   // one "io" for the kv commit
   auto ios = 1 + txc->ioc.get_num_ios();
+/** comment by hy 2020-08-15
+ * # 从配置文件中加载 cost
+     bluestore_throttle_cost_per_io
+     默认 hdd 670000
+          ssd 4000
+ */
+
   auto cost = throttle_cost_per_io.load();
+
   txc->cost = ios * cost + txc->bytes;
   txc->ios = ios;
   dout(10) << __func__ << " " << txc << " cost " << txc->cost << " ("
@@ -11449,17 +11975,48 @@ void BlueStore::_txc_state_proc(TransContext *txc)
   while (true) {
     dout(10) << __func__ << " txc " << txc
 	     << " " << txc->get_state_name() << dendl;
+/** comment by hy 2020-02-05
+ * # 事务状态机切换
+     https://blog.csdn.net/lzw06061139/article/details/86411292
+ */
     switch (txc->state) {
+/** comment by hy 2020-08-15
+ * # 该阶段主要是io前的准备工作，如分配磁盘空间等；根据io
+     size的大小同步执行aio或者延迟io
+     如果是延迟io的metadata和data会先写入rocksdb
+     后面再延迟更新到OSD block设备上
+     如果是aio就更新状态为STATE_AIO_WAIT，并提交io
+     阶段延迟由bluestore_state_prepare_lat标识
+ */
     case TransContext::STATE_PREPARE:
       throttle.log_state_latency(*txc, logger, l_bluestore_state_prepare_lat);
+/** comment by hy 2020-05-30
+ * # 还有没有提交的操作
+ */
       if (txc->ioc.has_pending_aios()) {
+/** comment by hy 2020-04-22
+ * # 区分是否包含simple write，如果没有，直接执行后面的case
+ */
 	txc->state = TransContext::STATE_AIO_WAIT;
 	txc->had_ios = true;
+/** comment by hy 2020-02-05
+ * # 向设备提交请求,也就是先写数据到磁盘吧
+ */
 	_txc_aio_submit(txc);
 	return;
       }
+/** comment by hy 2020-04-22
+ * # 继续往下执行到下一个状态
+ */
       // ** fall-thru **
-
+/** comment by hy 2020-08-15
+ * # 如果是aio，等待aio完成（aio完成后，bluestore回调aio_cb）
+     更新状态为STATE_IO_DONE；很显然，deferred 
+     io是不需要等待aio的，所以通过上述osd perf 
+     dump看到的延迟通常都极小
+     该阶段延迟由bluestore_state_aio_wait_lat标识
+     其延迟受配置、设备性能等的影响
+ */
     case TransContext::STATE_AIO_WAIT:
       {
 	mono_clock::duration lat = throttle.log_state_latency(
@@ -11470,10 +12027,18 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 		  << dendl;
 	}
       }
-
+/** comment by hy 2020-02-05
+ * # 等待完成 状态设置为 STATE_IO_DONE
+     保证pg对应的OpSequencer中的txc按排队的先后顺序依次进入
+     pg中的同一个object可能连续提交多次写请求
+ */
       _txc_finish_io(txc);  // may trigger blocked txc's too
       return;
 
+/** comment by hy 2020-08-15
+ * # 结束io，将状态设置为STATE_KV_QUEUED，通知kv_sync线程同步io及metadata
+     该阶段的延迟也通常很小，延迟由l_bluestore_state_io_done_lat
+ */
     case TransContext::STATE_IO_DONE:
       ceph_assert(ceph_mutex_is_locked(txc->osr->qlock));  // see _txc_finish_io
       if (txc->had_ios) {
@@ -11481,6 +12046,11 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       }
       throttle.log_state_latency(*txc, logger, l_bluestore_state_io_done_lat);
       txc->state = TransContext::STATE_KV_QUEUED;
+/** comment by hy 2020-07-30
+ * # sync之前的提交
+     提交到缓冲中就唤醒下盘动作,既提交前将kv缓冲都下盘
+     默认关闭
+ */
       if (cct->_conf->bluestore_sync_submit_transaction) {
 	if (txc->last_nid >= nid_max ||
 	    txc->last_blobid >= blobid_max) {
@@ -11503,10 +12073,18 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 	  dout(20) << __func__ << " DEBUG randomly forcing submit via kv thread"
 		   << dendl;
 	} else {
+/** comment by hy 2020-02-05
+ * # 提交事务,并唤醒下盘,并设置已经完成提交状态 STATE_KV_SUBMITTED
+ */
 	  _txc_apply_kv(txc, true);
 	}
       }
       {
+/** comment by hy 2020-03-02
+ * # 异步提交,应用完成后变化为提交到数据库的状态
+     BlueStore::_kv_sync_thread,将从kv_queue 取数据,然后 submit_transaction
+     对应为 kv_committing
+ */
 	std::lock_guard l(kv_lock);
 	kv_queue.push_back(txc);
 	if (!kv_sync_in_progress) {
@@ -11517,32 +12095,70 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 	  kv_queue_unsubmitted.push_back(txc);
 	  ++txc->osr->kv_committing_serially;
 	}
+/** comment by hy 2020-08-02
+ * # kv_ios 决定 kv sync 线程是否要进行刷 数据盘
+ */
 	if (txc->had_ios)
 	  kv_ios++;
 	kv_throttle_costs += txc->cost;
       }
       return;
+/** comment by hy 2020-08-15
+ * # kv_sync中flush OSD block设备、提交kv transaction
+     如果是deferred io，还会进行kv的清理操作
+     kv_finalize完成线程执行后续的io收尾工作
+     bluestore_state_kv_queued_lat 标识，其延迟受设备性能、rocksdb等的影响
+ */
     case TransContext::STATE_KV_SUBMITTED:
+/** comment by hy 2020-02-05
+ * # 记录一下,并调用注册的 commit 回调函数
+ */
       _txc_committed_kv(txc);
       // ** fall-thru **
 
+/** comment by hy 2020-08-15
+ * # 是aio，将状态设置为STATE_FINISHING, 否则设置为
+     STATE_DEFERRED_QUEUED；该阶段延迟由bluestore_state_kv_done_lat标识
+ */
     case TransContext::STATE_KV_DONE:
       throttle.log_state_latency(*txc, logger, l_bluestore_state_kv_done_lat);
+/** comment by hy 2020-05-30
+ * # 事务延迟, 
+ deferred_txn存放着预写日志相关的数据。而只有小写才有这个延迟
+     日志写入完成后，到这所有的数据写入都完成,
+     BlueStore::_deferred_aio_finish修改状态为 STATE_DEFERRED_CLEANUP
+ */
       if (txc->deferred_txn) {
 	txc->state = TransContext::STATE_DEFERRED_QUEUED;
 	_deferred_queue(txc);
 	return;
       }
+/** comment by hy 2020-02-05
+ * # 试着完成中状态
+ */
       txc->state = TransContext::STATE_FINISHING;
       break;
 
+/** comment by hy 2020-08-15
+ * # 延迟io的清理操作
+     事务上下文等的清理与aio一致
+     该阶段延迟由bluestore_state_deferred_cleanup_lat
+     其延迟通常都会很大
+ */
     case TransContext::STATE_DEFERRED_CLEANUP:
       throttle.log_state_latency(*txc, logger, l_bluestore_state_deferred_cleanup_lat);
       txc->state = TransContext::STATE_FINISHING;
       // ** fall-thru **
 
+/** comment by hy 2020-08-15
+ * # 清理操作，如果满足条件，也会提交deferred io
+     该阶段延迟由bluestore_state_finishing_lat标识，其延迟通常很小
+ */
     case TransContext::STATE_FINISHING:
       throttle.log_state_latency(*txc, logger, l_bluestore_state_finishing_lat);
+/** comment by hy 2020-02-06
+ * # 清理事务资源
+ */
       _txc_finish(txc);
       return;
 
@@ -11563,29 +12179,54 @@ void BlueStore::_txc_finish_io(TransContext *txc)
    * we need to preserve the order of kv transactions,
    * even though aio will complete in any order.
    */
-
+/** comment by hy 2020-04-24
+ * # 获取txc所属的OpSequencer，并且加锁，保证互斥访问osr
+ */
   OpSequencer *osr = txc->osr.get();
   std::lock_guard l(osr->qlock);
+/** comment by hy 2020-04-24
+ * # 设置状态机的state为STATE_IO_DONE
+ */
   txc->state = TransContext::STATE_IO_DONE;
+/** comment by hy 2020-04-24
+ * # 清除txc正在运行的aio
+ */
   txc->ioc.release_running_aios();
+/** comment by hy 2020-01-02
+ * # 等待队列中的东西已经被处理完成,这里有个线程一直取走里面的数据,进行保序
+ */
   OpSequencer::q_list_t::iterator p = osr->q.iterator_to(*txc);
   while (p != osr->q.begin()) {
     --p;
+/** comment by hy 2020-04-24
+ * # 如果前面还有未完成IO的txc 那么需要停止当前txc操作 等待前面txc完成IO
+     目的是：确保之前txc的IO都完成。
+ */
     if (p->state < TransContext::STATE_IO_DONE) {
       dout(20) << __func__ << " " << txc << " blocked by " << &*p << " "
 	       << p->get_state_name() << dendl;
       return;
     }
+/** comment by hy 2020-04-24
+ * # 前面的txc已经进入大于等于STATE_KV_QUEUED的状态了，那么递增p并退出循环。
+     目的是：找到状态为STATE_IO_DONE的且在osr中排序最靠前的txc。
+ */
     if (p->state > TransContext::STATE_IO_DONE) {
       ++p;
       break;
     }
   }
+/** comment by hy 2020-03-02
+ * # 同步等数据完成进行切换
+ */
   do {
     _txc_state_proc(&*p++);
   } while (p != osr->q.end() &&
 	   p->state == TransContext::STATE_IO_DONE);
 
+/** comment by hy 2020-02-05
+ * # 完成后就开始唤醒等待下一步操作
+ */
   if (osr->kv_submitted_waiters) {
     osr->qcond.notify_all();
   }
@@ -11600,11 +12241,17 @@ void BlueStore::_txc_write_nodes(TransContext *txc, KeyValueDB::Transaction t)
 
   // finalize onodes
   for (auto o : txc->onodes) {
+/** comment by hy 2020-02-05
+ * # 提交到 数据库事务 O 中
+ */
     _record_onode(o, t);
     o->flushing_count++;
   }
 
   // objects we modified but didn't affect the onode
+/** comment by hy 2020-03-02
+ * # 更新缓存,使修改的数据缓存无效(删除)
+ */
   auto p = txc->modified_objects.begin();
   while (p != txc->modified_objects.end()) {
     if (txc->onodes.count(*p) == 0) {
@@ -11617,6 +12264,9 @@ void BlueStore::_txc_write_nodes(TransContext *txc, KeyValueDB::Transaction t)
   }
 
   // finalize shared_blobs
+/** comment by hy 2020-02-05
+ * # 非独立的 shared_blobs的信息 提交到数据库 L 中
+ */
   for (auto sb : txc->shared_blobs) {
     string key;
     auto sbid = sb->get_sbid();
@@ -11662,6 +12312,9 @@ void BlueStore::_txc_finalize_kv(TransContext *txc, KeyValueDB::Transaction t)
   interval_set<uint64_t> tmp_allocated, tmp_released;
   interval_set<uint64_t> *pallocated = &txc->allocated;
   interval_set<uint64_t> *preleased = &txc->released;
+/** comment by hy 2020-03-02
+ * # 锁定分配表
+ */
   if (!txc->allocated.empty() && !txc->released.empty()) {
     interval_set<uint64_t> overlap;
     overlap.intersection_of(txc->allocated, txc->released);
@@ -11704,9 +12357,15 @@ void BlueStore::_txc_apply_kv(TransContext *txc, bool sync_submit_transaction)
     auto start = mono_clock::now();
 #endif
 
+/** comment by hy 2020-05-30
+ * # submit_transaction 提交事务
+ */
     int r = cct->_conf->bluestore_debug_omit_kv_commit ? 0 : db->submit_transaction(txc->t);
     ceph_assert(r == 0);
     txc->state = TransContext::STATE_KV_SUBMITTED;
+/** comment by hy 2020-02-05
+ * # 唤醒等待
+ */
     if (txc->osr->kv_submitted_waiters) {
       std::lock_guard l(txc->osr->qlock);
       txc->osr->qcond.notify_all();
@@ -11725,6 +12384,9 @@ void BlueStore::_txc_apply_kv(TransContext *txc, bool sync_submit_transaction)
 #endif
   }
 
+/** comment by hy 2020-08-01
+ * # 唤醒对应的 BlueStore::Onode::flush
+ */
   for (auto ls : { &txc->onodes, &txc->modified_objects }) {
     for (auto& o : *ls) {
       dout(20) << __func__ << " onode " << o << " had " << o->flushing_count
@@ -11785,6 +12447,9 @@ void BlueStore::_txc_finish(TransContext *txc)
     std::lock_guard l(osr->qlock);
     txc->state = TransContext::STATE_DONE;
     bool notify = false;
+/** comment by hy 2020-02-06
+ * # 转化状态
+ */
     while (!osr->q.empty()) {
       TransContext *txc = &osr->q.front();
       dout(20) << __func__ << "  txc " << txc << " " << txc->get_state_name()
@@ -11795,6 +12460,9 @@ void BlueStore::_txc_finish(TransContext *txc)
 	  // for _osr_drain_preceding()
           notify = true;
 	}
+/** comment by hy 2020-09-10
+ * # 请求比最大延迟要大,进行延迟提交,默认16个
+ */
 	if (txc->state == TransContext::STATE_DEFERRED_QUEUED &&
 	    osr->q.size() > g_conf()->bluestore_max_deferred_txc) {
 	  submit_deferred = true;
@@ -11802,6 +12470,9 @@ void BlueStore::_txc_finish(TransContext *txc)
         break;
       }
 
+/** comment by hy 2020-02-06
+ * # 移交到释放队列中
+ */
       osr->q.pop_front();
       releasing_txc.push_back(*txc);
     }
@@ -11813,16 +12484,25 @@ void BlueStore::_txc_finish(TransContext *txc)
 
     // only drain()/drain_preceding() need wakeup,
     // other cases use kv_submitted_waiters
+/** comment by hy 2020-02-06
+ * # 执行完唤醒
+ */
     if (notify || empty) {
       osr->qcond.notify_all();
     }
   }
 
+/** comment by hy 2020-02-06
+ * # 
+ */
   while (!releasing_txc.empty()) {
     // release to allocator only after all preceding txc's have also
     // finished any deferred writes that potentially land in these
     // blocks
     auto txc = &releasing_txc.front();
+/** comment by hy 2020-02-06
+ * # 清理资源
+ */
     _txc_release_alloc(txc);
     releasing_txc.pop_front();
     throttle.log_state_latency(*txc, logger, l_bluestore_state_done_lat);
@@ -11830,6 +12510,9 @@ void BlueStore::_txc_finish(TransContext *txc)
     delete txc;
   }
 
+/** comment by hy 2020-09-10
+ * # 触发延迟提交
+ */
   if (submit_deferred) {
     // we're pinning memory; flush!  we could be more fine-grained here but
     // i'm not sure it's worth the bother.
@@ -11853,6 +12536,9 @@ void BlueStore::_txc_release_alloc(TransContext *txc)
   if (likely(!cct->_conf->bluestore_debug_no_reuse_blocks)) {
     int r = 0;
     if (cct->_conf->bdev_enable_discard && cct->_conf->bdev_async_discard) {
+/** comment by hy 2020-02-06
+ * # NVME直接返回-1
+ */
       r = bdev->queue_discard(txc->released);
       if (r == 0) {
 	dout(10) << __func__ << "(queued) " << txc << " " << std::hex
@@ -11866,6 +12552,9 @@ void BlueStore::_txc_release_alloc(TransContext *txc)
     }
     dout(10) << __func__ << "(sync) " << txc << " " << std::hex
              << txc->released << std::dec << dendl;
+/** comment by hy 2020-02-06
+ * # 释放PE
+ */
     alloc->release(txc->released);
   }
 
@@ -12078,6 +12767,10 @@ void BlueStore::_kv_sync_thread()
   ceph_assert(!kv_sync_started);
   kv_sync_started = true;
   kv_cond.notify_all();
+/** comment by hy 2020-03-02
+ * # 处理提交了的事务
+     这里是性能改造点
+ */
   while (true) {
     ceph_assert(kv_committing.empty());
     if (kv_queue.empty() &&
@@ -12099,6 +12792,9 @@ void BlueStore::_kv_sync_thread()
 	       << " deferred done " << deferred_done_queue.size()
 	       << " stable " << deferred_stable_queue.size()
 	       << dendl;
+/** comment by hy 2020-04-24
+ * # 交换指针
+ */
       kv_committing.swap(kv_queue);
       kv_submitting.swap(kv_queue_unsubmitted);
       deferred_done.swap(deferred_done_queue);
@@ -12136,12 +12832,21 @@ void BlueStore::_kv_sync_thread()
 	  dout(20) << __func__ << " skipping flush (no aios, no deferred_done)" << dendl;
       	}
       }
-
+/** comment by hy 2020-04-24
+ * # 处理 deferred_done_queue
+ */
       if (force_flush) {
 	dout(20) << __func__ << " num_aios=" << aios
 		 << " force_flush=" << (int)force_flush
 		 << ", flushing, deferred done->stable" << dendl;
 	// flush/barrier on block device
+/** comment by hy 2020-04-24
+ * # 刷数据到磁盘上
+     KernelDevice::flush
+     这里是最多的 0.004148904 = 240 IPOS
+     我认为已经使用了libaio,其他的情况下还是因为是写在缓冲中还是有必要的
+     而不是posix aio所以这个flush就不必要了
+ */
 	bdev->flush();
 
 	// if we flush then deferred done are now deferred stable
@@ -12160,6 +12865,9 @@ void BlueStore::_kv_sync_thread()
       // we submit.
       uint64_t new_nid_max = 0, new_blobid_max = 0;
       if (nid_last + cct->_conf->bluestore_nid_prealloc/2 > nid_max) {
+/** comment by hy 2020-08-01
+ * # 这个放在 lead 线程处理
+ */
 	KeyValueDB::Transaction t =
 	  kv_submitting.empty() ? synct : kv_submitting.front()->t;
 	new_nid_max = nid_last + cct->_conf->bluestore_nid_prealloc;
@@ -12169,6 +12877,9 @@ void BlueStore::_kv_sync_thread()
 	dout(10) << __func__ << " new_nid_max " << new_nid_max << dendl;
       }
       if (blobid_last + cct->_conf->bluestore_blobid_prealloc/2 > blobid_max) {
+/** comment by hy 2020-08-01
+ * # 这个也是放在lead线程处理
+ */
 	KeyValueDB::Transaction t =
 	  kv_submitting.empty() ? synct : kv_submitting.front()->t;
 	new_blobid_max = blobid_last + cct->_conf->bluestore_blobid_prealloc;
@@ -12177,7 +12888,12 @@ void BlueStore::_kv_sync_thread()
 	t->set(PREFIX_SUPER, "blobid_max", bl);
 	dout(10) << __func__ << " new_blobid_max " << new_blobid_max << dendl;
       }
-
+/** comment by hy 2020-04-24
+ * # 继续执行
+     需要多线程处理
+     l_bluestore_state_kv_queued_lat state_kv_queued_lat
+     0.029806399
+ */
       for (auto txc : kv_committing) {
 	throttle.log_state_latency(*txc, logger, l_bluestore_state_kv_queued_lat);
 	if (txc->state == TransContext::STATE_KV_QUEUED) {
@@ -12199,15 +12915,28 @@ void BlueStore::_kv_sync_thread()
       // transaction is ready for commit.
       throttle.release_kv_throttle(costs);
 
+/** comment by hy 2020-08-03
+ * # 距离上一次 操作 时间间隔操作配置文件间隔
+     默认配置为 1秒
+ */
       if (bluefs &&
 	  after_flush - bluefs_last_balance >
 	  ceph::make_timespan(cct->_conf->bluestore_bluefs_balance_interval)) {
 	bluefs_last_balance = after_flush;
+/** comment by hy 2020-05-30
+ * # 更新 文件系统 bitmap,清理不必要的空间
+ */
 	int r = _balance_bluefs_freespace();
 	ceph_assert(r >= 0);
       }
 
       // cleanup sync deferred keys
+/** comment by hy 2020-04-22
+ * # 处理 deferred_stable_queue
+     依次操作dbh中的txc，将k/v中的wal日志删除，
+     然后dbh入队列deferred_stable_to_finalize，
+     等待线程kv_finalize_thread执行
+ */
       for (auto b : deferred_stable) {
 	for (auto& txc : b->txcs) {
 	  bluestore_deferred_transaction_t& wt = *txc.deferred_txn;
@@ -12222,6 +12951,46 @@ void BlueStore::_kv_sync_thread()
       auto sync_start = mono_clock::now();
 #endif
       // submit synct synchronously (block and wait for it to commit)
+/** comment by hy 2020-04-24
+ * # submit_transaction 同步kv，有设置bluefs_extents、删除wal两种操作
+     调用 submit_transaction_sync
+     不如快 submit_transaction
+     里面是不是可以上事务锁
+     调用堆栈为
+     
+  1: (KernelDevice::flush()+0x5e) [0x55edcc37dbd0]
+  2: (BlueFS::flush_bdev(std::array<bool, 5ul>&)+0x140) [0x55edcc32a0be]
+  3: (BlueFS::_flush_bdev_safely(BlueFS::FileWriter*)+0xe4) [0x55edcc329eb6]
+  4: (BlueFS::_flush_and_sync_log(std::unique_lock<ceph::mutex_debug_detail::
+ mutex_debug_impl<false> >&, unsigned long, unsigned long)+0x13aa) [
+ 0x55edcc324e5c]
+  5: (BlueFS::_fsync(BlueFS::FileWriter*, std::unique_lock<ceph::
+ mutex_debug_detail::mutex_debug_impl<false> >&)+0x315) [0x55edcc329d35]
+  6: (BlueFS::fsync(BlueFS::FileWriter*)+0x4e) [0x55edcc353e6e]
+  7: (BlueRocksWritableFile::Sync()+0x3a) [0x55edcc354a46]
+  8: (rocksdb::WritableFileWriter::SyncInternal(bool)+0x1b4) [0x55edcccb6a74]
+  9: (rocksdb::WritableFileWriter::Sync(bool)+0x18c) [0x55edcccb64de]
+  10: (rocksdb::DBImpl::WriteToWAL(rocksdb::WriteThread::WriteGroup const&, 
+ rocksdb::log::Writer*, unsigned long*, bool, bool, unsigned long)+0x363) [
+ 0x55edccab808d]
+  11: (rocksdb::DBImpl::WriteImpl(rocksdb::WriteOptions const&, rocksdb::
+ WriteBatch*, rocksdb::WriteCallback*, unsigned long*, unsigned long, bool, 
+ unsigned long*, unsigned long, rocksdb::PreReleaseCallback*)+0xf31) [
+ 0x55edccab4c93]
+  12: (rocksdb::DBImpl::Write(rocksdb::WriteOptions const&, rocksdb::WriteBatch
+ *)+0x4a) [0x55edccab3cfe]
+  13: (RocksDBStore::submit_common(rocksdb::WriteOptions&, std::shared_ptr<
+ KeyValueDB::TransactionImpl>)+0x217) [0x55edcca33fcd]
+  14: (RocksDBStore::submit_transaction_sync(std::shared_ptr<KeyValueDB::
+ TransactionImpl>)+0x70) [0x55edcca345e4]
+  15: (BlueStore::_kv_sync_thread()+0x1ce4) [0x55edcc1d05ba]
+  16: (BlueStore::KVSyncThread::entry()+0x1c) [0x55edcc20e77a]
+  17: (Thread::entry_wrapper()+0x78) [0x55edcc42b676]
+  18: (Thread::_entry_func(void*)+0x18) [0x55edcc42b5f4]
+  19: (()+0x82de) [0x7f57169342de]
+  20: (clone()+0x43) [0x7f571566be83]
+ */
+      auto begin_kv = mono_clock::now();
       int r = cct->_conf->bluestore_debug_omit_kv_commit ? 0 : db->submit_transaction_sync(synct);
       ceph_assert(r == 0);
 
@@ -12245,7 +13014,13 @@ void BlueStore::_kv_sync_thread()
       }
 #endif
 
+/** comment by hy 2020-05-30
+ * # 记录到最终容器中
+ */
       {
+/** comment by hy 2020-08-15
+ * # _kv_finalize_thread去处理
+ */
 	std::unique_lock m{kv_finalize_lock};
 	if (kv_committing_to_finalize.empty()) {
 	  kv_committing_to_finalize.swap(kv_committing);
@@ -12290,14 +13065,23 @@ void BlueStore::_kv_sync_thread()
 	  << " in " << dur
 	  << " (" << dur_flush << " flush + " << dur_kv << " kv commit)"
 	  << dendl;
+/** comment by hy 2020-08-02
+ * # kv_flush_lat 延迟
+ */
 	log_latency("kv_flush",
 	  l_bluestore_kv_flush_lat,
 	  dur_flush,
 	  cct->_conf->bluestore_log_op_age);
+/** comment by hy 2020-08-02
+ * # kv_commit_lat 延迟
+ */
 	log_latency("kv_commit",
 	  l_bluestore_kv_commit_lat,
 	  dur_kv,
 	  cct->_conf->bluestore_log_op_age);
+/** comment by hy 2020-08-02
+ * # kv_sync_lat 延迟
+ */
 	log_latency("kv_sync",
 	  l_bluestore_kv_sync_lat,
 	  dur,
@@ -12305,6 +13089,9 @@ void BlueStore::_kv_sync_thread()
       }
 
       if (bluefs) {
+/** comment by hy 2020-09-05
+ * # 进行空间清理
+ */
 	if (!bluefs_extents_reclaiming.empty()) {
 	  dout(0) << __func__ << " releasing old bluefs 0x" << std::hex
 		   << bluefs_extents_reclaiming << std::dec << dendl;
@@ -12319,7 +13106,9 @@ void BlueStore::_kv_sync_thread()
 	      bdev->discard(p.get_start(), p.get_len());
 	    }
 	  }
-
+/** comment by hy 2020-05-30
+ * # 释放内存
+ */
 	  alloc->release(bluefs_extents_reclaiming);
 clear:
 	  bluefs_extents_reclaiming.clear();
@@ -12357,6 +13146,9 @@ void BlueStore::_kv_finalize_thread()
       kv_finalize_cond.wait(l);
       dout(20) << __func__ << " wake" << dendl;
     } else {
+/** comment by hy 2020-04-24
+ * # 交换指针
+ */
       kv_committed.swap(kv_committing_to_finalize);
       deferred_stable.swap(deferred_stable_to_finalize);
       l.unlock();
@@ -12364,14 +13156,18 @@ void BlueStore::_kv_finalize_thread()
       dout(20) << __func__ << " deferred_stable " << deferred_stable << dendl;
 
       auto start = mono_clock::now();
-
+/** comment by hy 2020-04-24
+ * # 处理kv_committing_to_finalize队列
+ */
       while (!kv_committed.empty()) {
 	TransContext *txc = kv_committed.front();
 	ceph_assert(txc->state == TransContext::STATE_KV_SUBMITTED);
 	_txc_state_proc(txc);
 	kv_committed.pop_front();
       }
-
+/** comment by hy 2020-04-24
+ * # 处理deferred_stable_to_finalize
+ */
       for (auto b : deferred_stable) {
 	auto p = b->txcs.begin();
 	while (p != b->txcs.end()) {
@@ -12379,6 +13175,9 @@ void BlueStore::_kv_finalize_thread()
 	  p = b->txcs.erase(p); // unlink here because
 	  _txc_state_proc(txc); // this may destroy txc
 	}
+/** comment by hy 2020-04-22
+ * # 释放dbh
+ */
 	delete b;
       }
       deferred_stable.clear();
@@ -12386,6 +13185,9 @@ void BlueStore::_kv_finalize_thread()
       if (!deferred_aggressive) {
 	if (deferred_queue_size >= deferred_batch_ops.load() ||
 	    throttle.should_submit_deferred()) {
+/** comment by hy 2020-05-30
+ * # 
+ */
 	  deferred_try_submit();
 	}
       }
@@ -12424,23 +13226,44 @@ void BlueStore::_deferred_queue(TransContext *txc)
   deferred_lock.lock();
   if (!txc->osr->deferred_pending &&
       !txc->osr->deferred_running) {
+/** comment by hy 2020-04-22
+ * # 排队osr
+ */
     deferred_queue.push_back(*txc->osr);
   }
   if (!txc->osr->deferred_pending) {
+/** comment by hy 2020-04-22
+ * # 追加txc到deferred_pending中
+ */
     txc->osr->deferred_pending = new DeferredBatch(cct, txc->osr.get());
   }
   ++deferred_queue_size;
+/** comment by hy 2020-04-22
+ * # 将txc追加到末尾
+ */
   txc->osr->deferred_pending->txcs.push_back(*txc);
   bluestore_deferred_transaction_t& wt = *txc->deferred_txn;
   for (auto opi = wt.ops.begin(); opi != wt.ops.end(); ++opi) {
     const auto& op = *opi;
     ceph_assert(op.op == bluestore_deferred_op_t::OP_WRITE);
     bufferlist::const_iterator p = op.data.begin();
+/** comment by hy 2020-12-05
+ * # 范围
+ */
     for (auto e : op.extents) {
+/** comment by hy 2020-08-31
+ * # 封装 延迟操作
+     DeferredBatch::prepare_write
+     p = bluestore_deferred_transaction_t
+         bluestore_deferred_op_t::data
+ */
       txc->osr->deferred_pending->prepare_write(
 	cct, wt.seq, e.offset, e.length, p);
     }
   }
+/** comment by hy 2020-12-05
+ * # 有延迟处理时间
+ */
   if (deferred_aggressive &&
       !txc->osr->deferred_running) {
     _deferred_submit_unlock(txc->osr.get());
@@ -12460,6 +13283,9 @@ void BlueStore::deferred_try_submit()
     osrs.push_back(&osr);
   }
   for (auto& osr : osrs) {
+/** comment by hy 2020-08-31
+ * # 继续装置延迟
+ */
     if (osr->deferred_pending) {
       if (!osr->deferred_running) {
 	_deferred_submit_unlock(osr.get());
@@ -12481,6 +13307,10 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
   dout(10) << __func__ << " osr " << osr
 	   << " " << osr->deferred_pending->iomap.size() << " ios pending "
 	   << dendl;
+/** comment by hy 2020-04-22
+ * # 切换指针，保证每次操作完成后才会进行下一次提交
+     submit的相关函数都会判断deferred_running是否为空
+ */
   ceph_assert(osr->deferred_pending);
   ceph_assert(!osr->deferred_running);
 
@@ -12497,10 +13327,16 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
     throttle.log_state_latency(txc, logger, l_bluestore_state_deferred_queued_lat);
   }
   uint64_t start = 0, pos = 0;
+/** comment by hy 2020-08-03
+ * # bufferlist 对齐
+ */
   bufferlist bl;
   auto i = b->iomap.begin();
   while (true) {
     if (i == b->iomap.end() || i->first != pos) {
+/** comment by hy 2020-12-05
+ * # 有数据
+ */
       if (bl.length()) {
 	dout(20) << __func__ << " write 0x" << std::hex
 		 << start << "~" << bl.length()
@@ -12508,6 +13344,11 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
 	if (!g_conf()->bluestore_debug_omit_block_device_write) {
 	  logger->inc(l_bluestore_deferred_write_ops);
 	  logger->inc(l_bluestore_deferred_write_bytes, bl.length());
+/** comment by hy 2020-04-22
+ * # 准备所有txc的写buffer
+     这个涉及对齐等行为,
+     这个地方是小写,但是大写的数据会去掉小写的数据
+ */
 	  int r = bdev->aio_write(start, bl, &b->ioc, false);
 	  ceph_assert(r == 0);
 	}
@@ -12529,7 +13370,9 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
     bl.claim_append(i->second.bl);
     ++i;
   }
-
+/** comment by hy 2020-04-22
+ * # 提交数据
+ */
   bdev->aio_submit(&b->ioc);
 }
 
@@ -12573,15 +13416,24 @@ void BlueStore::_deferred_aio_finish(OpSequencer *osr)
       for (auto& i : b->txcs) {
 	TransContext *txc = &i;
 	throttle.log_state_latency(*txc, logger, l_bluestore_state_deferred_aio_wait_lat);
+/** comment by hy 2020-04-22
+ * # 设置状态
+ */
 	txc->state = TransContext::STATE_DEFERRED_CLEANUP;
 	costs += txc->cost;
       }
     }
+/** comment by hy 2020-04-22
+ * # 释放throttle资源
+ */
     throttle.release_deferred_throttle(costs);
   }
 
   {
     std::lock_guard l(kv_lock);
+/** comment by hy 2020-04-22
+ * # 入队列
+ */
     deferred_done_queue.emplace_back(b);
 
     // in the normal case, do not bother waking up the kv thread; it will
@@ -12650,43 +13502,87 @@ int BlueStore::queue_transactions(
 {
   FUNCTRACE(cct);
   list<Context *> on_applied, on_commit, on_applied_sync;
+/** comment by hy 2020-08-30
+ * # 所有的对应回调集合
+ */
   ObjectStore::Transaction::collect_contexts(
     tls, &on_applied, &on_commit, &on_applied_sync);
 
   auto start = mono_clock::now();
 
   Collection *c = static_cast<Collection*>(ch.get());
+/** comment by hy 2020-04-22
+ * # 准备pg的OpSequencer，保证pg内部操作串行执行
+ */
   OpSequencer *osr = c->osr.get();
   dout(10) << __func__ << " ch " << c << " " << c->cid << dendl;
 
   // prepare
+/** comment by hy 2020-02-01
+ * # 获取数据库事务,将事务放入操作序列队列中
+     将其在OpSequencer内部排队
+     on_applied, on_commit, on_applied_sync 默认为 NULL
+ */
   TransContext *txc = _txc_create(static_cast<Collection*>(ch.get()), osr,
 				  &on_commit);
 
+/** comment by hy 2020-02-03
+ * # 将osd层面的指定的pg事务，转换为BlueStore层面的事务操作
+     tls 封装的pg事务
+ */
   for (vector<Transaction>::iterator p = tls.begin(); p != tls.end(); ++p) {
     txc->bytes += (*p).get_num_bytes();
+/** comment by hy 2020-02-05
+ * # 包装事务成数据库事务格式,Onode提交到缓存中
+ */
     _txc_add_transaction(txc, &(*p));
   }
+/** comment by hy 2020-02-05
+ * # 统计性能数据
+ */
   _txc_calc_cost(txc);
 
+/** comment by hy 2020-02-05
+ * # 记录事务数据,onode信息,如数据信息onode中的sharedBlob
+ */
   _txc_write_nodes(txc, txc->t);
 
   // journal deferred items
+/** comment by hy 2020-03-02
+ * # 将deferred 类型 的事件 加入k/v的事务中
+ */
   if (txc->deferred_txn) {
     txc->deferred_txn->seq = ++deferred_seq;
     bufferlist bl;
     encode(*txc->deferred_txn, bl);
     string key;
+/** comment by hy 2020-08-30
+ * # 序号作为 key
+ */
     get_deferred_key(txc->deferred_txn->seq, &key);
     txc->t->set(PREFIX_DEFERRED, key, bl);
   }
 
+/** comment by hy 2020-02-05
+ * # 更新分配块表,可以理解为内存中锁定块
+ */
   _txc_finalize_kv(txc, txc->t);
+/** comment by hy 2020-02-05
+ * # 下面的操作可能由于限流原因太慢,别计算时间了
+ */
   if (handle)
     handle->suspend_tp_timeout();
 
+/** comment by hy 2020-08-31
+ * # 主要消耗时间点
+ */
   auto tstart = mono_clock::now();
 
+/** comment by hy 2020-03-02
+ * # 记录操作,用于失败时的限制,以及延迟处理的大小限制
+     如果延迟提交已经上线了,先试着提交
+     然后会在finish_start_transaction 等待
+ */
   if (!throttle.try_start_transaction(
 	*db,
 	*txc,
@@ -12695,6 +13591,12 @@ int BlueStore::queue_transactions(
     dout(10) << __func__ << " failed get throttle_deferred_bytes, aggressive"
 	     << dendl;
     ++deferred_aggressive;
+/** comment by hy 2020-08-15
+ * # 应该是这性能消耗最多的地方
+     小写就调用延迟写。先试着提交数据
+     然后将唤醒 kv 线程进行处理
+     这里是因为上面开启了限制延迟数据的大小
+ */
     deferred_try_submit();
     {
       // wake up any previously finished deferred events
@@ -12704,23 +13606,41 @@ int BlueStore::queue_transactions(
 	kv_cond.notify_one();
       }
     }
+/** comment by hy 2020-09-03
+ * # 这里延迟显示等待
+ */
     throttle.finish_start_transaction(*db, *txc, tstart);
     --deferred_aggressive;
   }
   auto tend = mono_clock::now();
 
+/** comment by hy 2020-02-05
+ * # 重新开始计时
+ */
   if (handle)
     handle->reset_tp_timeout();
 
   logger->inc(l_bluestore_txc);
 
   // execute (start)
+/** comment by hy 2020-02-06
+ * # 执行状态机 事务切换状态 会将io请求提交给块设备
+ */
   _txc_state_proc(txc);
 
   // we're immediately readable (unlike FileStore)
+/** comment by hy 2020-02-06
+ * # 调用 pg 应用
+ */
   for (auto c : on_applied_sync) {
     c->complete(0);
   }
+/** comment by hy 2020-02-06
+ * # commit 已经执行完成,
+     放入提交队列中
+     后续准备执行对于的pg?
+     后续的回调是
+ */
   if (!on_applied.empty()) {
     if (c->commit_queue) {
       c->commit_queue->queue(on_applied);
@@ -12743,6 +13663,9 @@ int BlueStore::queue_transactions(
 void BlueStore::_txc_aio_submit(TransContext *txc)
 {
   dout(10) << __func__ << " txc " << txc << dendl;
+/** comment by hy 2020-02-05
+ * # NVMEDevice::aio_submit
+ */
   bdev->aio_submit(&txc->ioc);
 }
 
@@ -12752,40 +13675,71 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
 
   _dump_transaction<30>(cct, t);
 
+/** comment by hy 2020-09-01
+ * # 可以由上面进行传递参数,从而合并对应的操作
+     但是这里这样做是为了保持序列一致?
+     还是不能修改
+ */
   vector<CollectionRef> cvec(i.colls.size());
   unsigned j = 0;
+/** comment by hy 2020-02-03
+ * # pg 对应的目录 信息即容器信息
+     i 作为事务迭代器
+     一个操作对应的 容器
+     加载 pg
+ */
   for (vector<coll_t>::iterator p = i.colls.begin(); p != i.colls.end();
        ++p, ++j) {
     cvec[j] = _get_collection(*p);
   }
-  
+/** comment by hy 2020-02-03
+ * # 事务对象信息
+ */
   vector<OnodeRef> ovec(i.objects.size());
 
+/** comment by hy 2020-02-03
+ * # 事务中包含操作信息
+ */
   for (int pos = 0; i.have_op(); ++pos) {
     Transaction::Op *op = i.decode_op();
     int r = 0;
 
     // no coll or obj
+/** comment by hy 2020-02-03
+ * # 空操作
+ */
     if (op->op == Transaction::OP_NOP)
       continue;
 
 
     // collection operations
+/** comment by hy 2020-02-03
+ * # 执行容器操作
+ */
     CollectionRef &c = cvec[op->cid];
 
     // initialize osd_pool_id and do a smoke test that all collections belong
     // to the same pool
     spg_t pgid;
     if (!!c ? c->cid.is_pg(&pgid) : false) {
+/** comment by hy 2020-02-03
+ * # 这个断言很奇怪
+ */
       ceph_assert(txc->osd_pool_id == META_POOL_ID ||
                   txc->osd_pool_id == pgid.pool());
       txc->osd_pool_id = pgid.pool();
     }
 
+/** comment by hy 2020-02-03
+ * # 执行对应pg容器操作
+ */
     switch (op->op) {
     case Transaction::OP_RMCOLL:
       {
         const coll_t &cid = i.get_cid(op->cid);
+/** comment by hy 2020-02-03
+ * # 删除前里面的对象要为空?
+ */
 	r = _remove_collection(txc, cid, &c);
 	if (!r)
 	  continue;
@@ -12796,6 +13750,9 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
       {
 	ceph_assert(!c);
 	const coll_t &cid = i.get_cid(op->cid);
+/** comment by hy 2020-02-03
+ * # 将 collect 包含 的 cnode 放入数据库中
+ */
 	r = _create_collection(txc, cid, op->split_bits, &c);
 	if (!r)
 	  continue;
@@ -12807,6 +13764,9 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
       break;
 
     case Transaction::OP_SPLIT_COLLECTION2:
+/** comment by hy 2020-02-03
+ * # 这是分裂的事务中执行分裂的步骤,分裂就是更改bits信息
+ */
       {
         uint32_t bits = op->split_bits;
         uint32_t rem = op->split_rem;
@@ -12826,6 +13786,9 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
       break;
 
     case Transaction::OP_COLL_HINT:
+/** comment by hy 2020-02-04
+ * # ???
+ */
       {
         uint32_t type = op->hint_type;
         bufferlist hint;
@@ -12878,6 +13841,18 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
 
     // object operations
     std::unique_lock l(c->lock);
+/** comment by hy 2020-09-01
+ * # ----------------------- 对象和容器操作分界线 ------------------------------
+ */
+/** comment by hy 2020-02-04
+ * # 获取操作中的对象
+     如果已经在内存中缓存过的就不需要获取对应的元数据,
+     我认为这个应该是一个接口里面去做的事情
+ */
+/** comment by hy 2020-09-01
+ * # 1: 获取对象对应的元数据
+     2: 执行对应的操作
+ */
     OnodeRef &o = ovec[op->oid];
     if (!o) {
       ghobject_t oid = i.get_oid(op->oid);
@@ -12890,6 +13865,9 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
       goto endop;
     }
 
+/** comment by hy 2020-02-04
+ * # 执行操作中的对象操作
+ */
     switch (op->op) {
     case Transaction::OP_CREATE:
     case Transaction::OP_TOUCH:
@@ -12900,9 +13878,17 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
       {
         uint64_t off = op->off;
         uint64_t len = op->len;
+/** comment by hy 2020-09-01
+ * # 从操作中获取对应的缓存标志
+     进行建议适当的预读与缓存
+     还是不使用为好
+ */
 	uint32_t fadvise_flags = i.get_fadvise_flags();
         bufferlist bl;
         i.decode_bl(bl);
+/** comment by hy 2020-02-04
+ * # 数据到缓存,并且写Onode到缓存容器中
+ */
 	r = _write(txc, c, o, off, len, bl, fadvise_flags);
       }
       break;
@@ -12969,6 +13955,9 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
 	OnodeRef& no = ovec[op->dest_oid];
 	if (!no) {
           const ghobject_t& noid = i.get_oid(op->dest_oid);
+/** comment by hy 2020-02-05
+ * # 获取目标缓存
+ */
 	  no = c->get_onode(noid, true);
 	}
 	r = _clone(txc, c, o, no);
@@ -13014,6 +14003,9 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
 	if (!no) {
 	  no = c->get_onode(noid, false);
 	}
+/** comment by hy 2020-02-05
+ * # 改下数据库就行
+ */
 	r = _rename(txc, c, o, no, noid);
       }
       break;
@@ -13068,6 +14060,9 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
     }
 
   endop:
+/** comment by hy 2020-02-05
+ * # 返回对应的错误码
+ */
     if (r < 0) {
       bool ok = false;
 
@@ -13127,7 +14122,13 @@ int BlueStore::_touch(TransContext *txc,
 {
   dout(15) << __func__ << " " << c->cid << " " << o->oid << dendl;
   int r = 0;
+/** comment by hy 2020-02-04
+ * # 通过事务分配 node id
+ */
   _assign_nid(txc, o);
+/** comment by hy 2020-02-04
+ * # 插入事务的onode 内存缓存中
+ */
   txc->write_onode(o);
   dout(10) << __func__ << " " << c->cid << " " << o->oid << " = " << r << dendl;
   return r;
@@ -13144,22 +14145,37 @@ void BlueStore::_pad_zeros(
   bl->hexdump(*_dout);
   *_dout << dendl;
   // front
+/** comment by hy 2020-02-04
+ * # 第一块buff
+ */
   size_t front_pad = *offset % chunk_size;
   size_t back_pad = 0;
   size_t pad_count = 0;
   if (front_pad) {
     size_t front_copy = std::min<uint64_t>(chunk_size - front_pad, length);
     bufferptr z = buffer::create_small_page_aligned(chunk_size);
+/** comment by hy 2020-02-04
+ * # 前端打 pad
+ */
     z.zero(0, front_pad, false);
     pad_count += front_pad;
+/** comment by hy 2020-02-04
+ * # 还要copy pad?
+ */
     bl->begin().copy(front_copy, z.c_str() + front_pad);
     if (front_copy + front_pad < chunk_size) {
       back_pad = chunk_size - (length + front_pad);
+/** comment by hy 2020-02-04
+ * # 尾巴范围打 pad
+ */
       z.zero(front_pad + length, back_pad, false);
       pad_count += back_pad;
     }
     bufferlist old, t;
     old.swap(*bl);
+/** comment by hy 2020-02-04
+ * # 有效数据
+ */
     t.substr_of(old, front_copy, length - front_copy);
     bl->append(z);
     bl->claim_append(t);
@@ -13168,6 +14184,9 @@ void BlueStore::_pad_zeros(
   }
 
   // back
+/** comment by hy 2020-02-04
+ * # 尾巴上的buff
+ */
   uint64_t end = *offset + length;
   unsigned back_copy = end % chunk_size;
   if (back_copy) {
@@ -13212,8 +14231,17 @@ void BlueStore::_do_write_small(
   logger->inc(l_bluestore_write_small_bytes, length);
 
   bufferlist bl;
+/** comment by hy 2020-02-04
+ * # https://www.freesion.com/article/9479730359/
+     为什么是copy
+ */
   blp.copy(length, bl);
 
+/** comment by hy 2020-08-15
+ * # 在对象内按照alloc_len对齐的逻辑地址
+     target_blob_size = bluestore_max_blob_size
+     hdd 512K SSD 64K
+ */
   auto max_bsize = std::max(wctx->target_blob_size, min_alloc_size);
   auto min_off = offset >= max_bsize ? offset - max_bsize : 0;
   uint32_t alloc_len = min_alloc_size;
@@ -13226,11 +14254,20 @@ void BlueStore::_do_write_small(
   // then check if blob can be reused via can_reuse_blob func or apply
   // direct/deferred write (the latter for extents including or higher
   // than 'offset' only).
+/** comment by hy 2020-09-04
+ * # 加载 多出来的数据
+ */
   o->extent_map.fault_range(db, min_off, offset + max_bsize - min_off);
 
   // Look for an existing mutable blob we can use.
+/** comment by hy 2020-08-15
+ * # 对应blob开始处所代表的对象内逻辑偏移
+ */
   auto begin = o->extent_map.extent_map.begin();
   auto end = o->extent_map.extent_map.end();
+/** comment by hy 2020-02-04
+ * # 返回 Extent 对象最对应的 extentmap
+ */
   auto ep = o->extent_map.seek_lextent(offset);
   if (ep != begin) {
     --ep;
@@ -13245,12 +14282,17 @@ void BlueStore::_do_write_small(
     prev_ep = end; // to avoid this extent check as it's a duplicate
   }
 
+/** comment by hy 2020-05-31
+ * # 一个排序关联容器，用于存储Key类型的对象,按照顺序占用位置
+ */
   boost::container::flat_set<const bluestore_blob_t*> inspected_blobs;
   // We don't want to have more blobs than min alloc units fit
   // into 2 max blobs
   size_t blob_threshold = max_blob_size / min_alloc_size * 2 + 1;
   bool above_blob_threshold = false;
-
+/** comment by hy 2020-05-31
+ * # 先占位置
+ */
   inspected_blobs.reserve(blob_threshold);
 
   uint64_t max_off = 0;
@@ -13259,7 +14301,13 @@ void BlueStore::_do_write_small(
   do {
     any_change = false;
 
+/** comment by hy 2020-02-04
+ * # 这个判断条件,不是很明白
+ */
     if (ep != end && ep->logical_offset < offset + max_bsize) {
+/** comment by hy 2020-02-04
+ * # 从extentmap中 映射 Blob
+ */
       BlobRef b = ep->blob;
       if (!above_blob_threshold) {
 	inspected_blobs.insert(&b->get_blob());
@@ -13270,6 +14318,9 @@ void BlueStore::_do_write_small(
 
       dout(20) << __func__ << " considering " << *b
 	       << " bstart 0x" << std::hex << bstart << std::dec << dendl;
+/** comment by hy 2020-09-02
+ * # 忽略掉不必要的字段
+ */
       if (bstart >= end_offs) {
 	dout(20) << __func__ << " ignoring distant " << *b << dendl;
       } else if (!b->get_blob().is_mutable()) {
@@ -13278,8 +14329,18 @@ void BlueStore::_do_write_small(
 		  ep->blob_offset % min_alloc_size) {
 	dout(20) << __func__ << " ignoring offset-skewed " << *b << dendl;
       } else {
+/** comment by hy 2020-02-04
+ * # 正常逻辑,这里开始与 AvlAllocator 关联
+     block_size 底层的大小
+     根据 block_size 大小 或者 csum 大小
+     作为条带大小
+     block_size = conf.bluefs_alloc_size = 1M
+ */
 	uint64_t chunk_size = b->get_blob().get_chunk_size(block_size);
 	// can we pad our head/tail out with zeros?
+/** comment by hy 2020-09-04
+ * # 补齐 0
+ */
 	uint64_t head_pad, tail_pad;
 	head_pad = p2phase(offset, chunk_size);
 	tail_pad = p2nphase(end_offs, chunk_size);
@@ -13297,25 +14358,39 @@ void BlueStore::_do_write_small(
 
 	uint64_t b_off = offset - head_pad - bstart;
 	uint64_t b_len = length + head_pad + tail_pad;
-
+/** comment by hy 2020-05-30
+ * # blob 头尾干净,磁盘空间也够,空间范围也对
+ */
 	// direct write into unused blocks of an existing mutable blob?
 	if ((b_off % chunk_size == 0 && b_len % chunk_size == 0) &&
 	    b->get_blob().get_ondisk_length() >= b_off + b_len &&
 	    b->get_blob().is_unused(b_off, b_len) &&
 	    b->get_blob().is_allocated(b_off, b_len)) {
+/** comment by hy 2020-02-04
+ * # 补齐空的
+ */
 	  _apply_padding(head_pad, tail_pad, bl);
 
 	  dout(20) << __func__ << "  write to unused 0x" << std::hex
 		   << b_off << "~" << b_len
 		   << " pad 0x" << head_pad << " + 0x" << tail_pad
 		   << std::dec << " of mutable " << *b << dendl;
+/** comment by hy 2020-02-04
+ * # 缓存是 Blob 对象中的 shared_blob?
+ */
 	  _buffer_cache_write(txc, b, b_off, bl,
 			      wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
 
 	  if (!g_conf()->bluestore_debug_omit_block_device_write) {
 	    if (b_len <= prefer_deferred_size) {
+/** comment by hy 2020-02-04
+ * # 等待延迟处理
+ */
 	      dout(20) << __func__ << " deferring small 0x" << std::hex
 		       << b_len << std::dec << " unused write via deferred" << dendl;
+/** comment by hy 2020-12-06
+ * # 生成 延迟事件
+ */
 	      bluestore_deferred_op_t *op = _get_deferred_op(txc);
 	      op->op = bluestore_deferred_op_t::OP_WRITE;
 	      b->get_blob().map(
@@ -13326,6 +14401,9 @@ void BlueStore::_do_write_small(
 		});
 	      op->data = bl;
 	    } else {
+/** comment by hy 2020-02-04
+ * # 将数据按照aio要求组装写入缓存,关键流程,并更新缓存
+ */
 	      b->get_blob().map_bl(
 		b_off, bl,
 		[&](uint64_t offset, bufferlist& t) {
@@ -13334,17 +14412,29 @@ void BlueStore::_do_write_small(
 		});
 	    }
 	  }
+/** comment by hy 2020-02-04
+ * # 计算crc
+ */
 	  b->dirty_blob().calc_csum(b_off, bl);
 	  dout(20) << __func__ << "  lex old " << *ep << dendl;
+/** comment by hy 2020-05-30
+ * # 标记脏
+ */
 	  Extent *le = o->extent_map.set_lextent(c, offset, b_off + head_pad, length,
 						 b,
 						 &wctx->old_extents);
 	  b->dirty_blob().mark_used(le->blob_offset, le->length);
+/** comment by hy 2020-05-31
+ * # 记录差分
+ */
 	  txc->statfs_delta.stored() += le->length;
 	  dout(20) << __func__ << "  lex " << *le << dendl;
 	  logger->inc(l_bluestore_write_small_unused);
 	  return;
 	}
+/** comment by hy 2020-05-30
+ * # 下面又是一种新的格局
+ */
 	// read some data to fill out the chunk?
 	uint64_t head_read = p2phase(b_off, chunk_size);
 	uint64_t tail_read = p2nphase(b_off + b_len, chunk_size);
@@ -13357,7 +14447,9 @@ void BlueStore::_do_write_small(
 	} else {
 	  head_read = tail_read = 0;
 	}
-
+/** comment by hy 2020-05-30
+ * # blob 头尾,但是对齐了
+ */
 	// chunk-aligned deferred overwrite?
 	if (b->get_blob().get_ondisk_length() >= b_off + b_len &&
 	    b_off % chunk_size == 0 &&
@@ -13368,6 +14460,9 @@ void BlueStore::_do_write_small(
 
 	  dout(20) << __func__ << "  reading head 0x" << std::hex << head_read
 		   << " and tail 0x" << tail_read << std::dec << dendl;
+/** comment by hy 2020-02-04
+ * # 读取头数据
+ */
 	  if (head_read) {
 	    bufferlist head_bl;
 	    int r = _do_read(c.get(), o, offset - head_pad - head_read, head_read,
@@ -13382,6 +14477,9 @@ void BlueStore::_do_write_small(
 	    bl.swap(head_bl);
 	    logger->inc(l_bluestore_write_penalty_read_ops);
 	  }
+/** comment by hy 2020-02-04
+ * # 读取尾巴数据
+ */
 	  if (tail_read) {
 	    bufferlist tail_bl;
 	    int r = _do_read(c.get(), o, offset + length + tail_pad, tail_read,
@@ -13396,10 +14494,14 @@ void BlueStore::_do_write_small(
 	    logger->inc(l_bluestore_write_penalty_read_ops);
 	  }
 	  logger->inc(l_bluestore_write_small_pre_read);
-
+/** comment by hy 2020-02-04
+ * # 写入共享的blob中
+ */
 	  _buffer_cache_write(txc, b, b_off, bl,
 			      wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
-
+/** comment by hy 2020-06-25
+ * # 计算crc
+ */
 	  if (b->get_blob().csum_type) {
 	    b->dirty_blob().calc_csum(b_off, bl);
 	  }
@@ -13420,6 +14522,9 @@ void BlueStore::_do_write_small(
 		     << " at " << op->extents << dendl;
 	  }
 
+/** comment by hy 2020-02-04
+ * # 开始设置 lextent
+ */
 	  Extent *le = o->extent_map.set_lextent(c, offset, offset - bstart, length,
 						 b, &wctx->old_extents);
 	  b->dirty_blob().mark_used(le->blob_offset, le->length);
@@ -13429,6 +14534,9 @@ void BlueStore::_do_write_small(
 	  return;
 	}
 	// try to reuse blob if we can
+/** comment by hy 2020-02-04
+ * # 判断可以使用的条件
+ */
 	if (b->can_reuse_blob(min_alloc_size,
 			      max_bsize,
 			      offset0 - bstart,
@@ -13441,6 +14549,9 @@ void BlueStore::_do_write_small(
 	  // AU. That's in turn might be caused by unaligned len in clone_range2.
 	  // Hence the second write will fail in an attempt to reuse blob at
 	  // do_alloc_write().
+/** comment by hy 2020-02-04
+ * # 没有冲突段
+ */
 	  if (!wctx->has_conflict(b,
 				  offset0,
 				  offset0 + alloc_len, 
@@ -13450,14 +14561,22 @@ void BlueStore::_do_write_small(
 	    // due to existent extents
 	    uint64_t b_off = offset - bstart;
 	    uint64_t b_off0 = b_off;
+/** comment by hy 2020-02-04
+ * # 对整段打上 pad
+ */
 	    _pad_zeros(&bl, &b_off0, chunk_size);
 
 	    dout(20) << __func__ << " reuse blob " << *b << std::hex
 		     << " (0x" << b_off0 << "~" << bl.length() << ")"
 		     << " (0x" << b_off << "~" << length << ")"
 		     << std::dec << dendl;
-
+/** comment by hy 2020-02-04
+ * # 更新下缓存
+ */
 	    o->extent_map.punch_hole(c, offset, length, &wctx->old_extents);
+/** comment by hy 2020-02-04
+ * # 放入 writes 缓存中
+ */
 	    wctx->write(offset, b, alloc_len, b_off0, bl, b_off, length,
 			false, false);
 	    logger->inc(l_bluestore_write_small_unused);
@@ -13471,6 +14590,9 @@ void BlueStore::_do_write_small(
     } // if (ep != end && ep->logical_offset < offset + max_bsize)
 
     // check extent for reuse in reverse order
+/** comment by hy 2020-02-04
+ * # 写着写着不够了
+ */
     if (prev_ep != end && prev_ep->logical_offset >= min_off) {
       BlobRef b = prev_ep->blob;
       if (!above_blob_threshold) {
@@ -13485,6 +14607,9 @@ void BlueStore::_do_write_small(
 			    max_bsize,
                             offset0 - bstart,
                             &alloc_len)) {
+/** comment by hy 2020-02-04
+ * # 可以抢救一下,挤一挤
+ */
 	ceph_assert(alloc_len == min_alloc_size); // expecting data always
 					     // fit into reused blob
 	// Need to check for pending writes desiring to
@@ -13524,6 +14649,9 @@ void BlueStore::_do_write_small(
     } // if (prev_ep != end && prev_ep->logical_offset >= min_off) 
   } while (any_change);
 
+/** comment by hy 2020-05-30
+ * # blob 不够,请求回收
+ */
   if (above_blob_threshold) {
     dout(10) << __func__ << " request GC, blobs >= " << inspected_blobs.size()
             << " " << std::hex << min_off << "~" << max_off << std::dec
@@ -13546,6 +14674,9 @@ void BlueStore::_do_write_small(
   BlobRef b = c->new_blob();
   uint64_t b_off = p2phase<uint64_t>(offset, alloc_len);
   uint64_t b_off0 = b_off;
+/** comment by hy 2020-02-04
+ * # 没有头尾可共用的,就进行分配新写
+ */
   _pad_zeros(&bl, &b_off0, block_size);
   o->extent_map.punch_hole(c, offset, length, &wctx->old_extents);
   wctx->write(offset, b, alloc_len, b_off0, bl, b_off, length,
@@ -13595,8 +14726,14 @@ void BlueStore::_do_write_big(
       // [offset - target_max_blob_size, offset + target_max_blob_size] range
       // then check if blob can be reused via can_reuse_blob func.
       bool any_change;
+/** comment by hy 2020-06-25
+ * # 试着找可用的 blob
+ */
       do {
 	any_change = false;
+/** comment by hy 2020-06-25
+ * # 包含可用的 blob
+ */
 	if (ep != end && ep->logical_offset < offset + max_bsize) {
 	  if (offset >= ep->blob_start() &&
               ep->blob->can_reuse_blob(min_alloc_size, max_bsize,
@@ -13630,6 +14767,9 @@ void BlueStore::_do_write_big(
 	}
       } while (b == nullptr && any_change);
     }
+/** comment by hy 2020-06-25
+ * # 没有 可用的 blob 
+ */
     if (b == nullptr) {
       b = c->new_blob();
       b_off = 0;
@@ -13638,6 +14778,11 @@ void BlueStore::_do_write_big(
 
     bufferlist t;
     blp.copy(l, t);
+/** comment by hy 2020-06-25
+ * # 包装成 write_item
+     向缓存 WriteContext 中的 voctor<write_item>writes 容器中添加
+     等待数据处理
+ */
     wctx->write(offset, b, l, b_off, t, b_off, l, false, new_blob);
     offset += l;
     length -= l;
@@ -13660,6 +14805,9 @@ int BlueStore::_do_alloc_write(
 
   CompressorRef c;
   double crr = 0;
+/** comment by hy 2020-05-30
+ * # 压缩流程
+ */
   if (wctx->compress) {
     c = select_option(
       "compression_algorithm",
@@ -13713,7 +14861,13 @@ int BlueStore::_do_alloc_write(
   // compress (as needed) and calc needed space
   uint64_t need = 0;
   auto max_bsize = std::max(wctx->target_blob_size, min_alloc_size);
+/** comment by hy 2020-05-31
+ * # 放入的写缓存
+ */
   for (auto& wi : wctx->writes) {
+/** comment by hy 2020-05-31
+ * # blob 中的小块处理
+ */
     if (c && wi.blob_length > min_alloc_size) {
       auto start = mono_clock::now();
 
@@ -13791,9 +14945,25 @@ int BlueStore::_do_alloc_write(
       need += wi.blob_length;
     }
   }
+/** comment by hy 2020-09-12
+ * # blob 到 磁盘
+ */
   PExtentVector prealloc;
+/** comment by hy 2020-09-12
+ * # 这是?
+ */
   prealloc.reserve(2 * wctx->writes.size());;
   int64_t prealloc_left = 0;
+/** comment by hy 2020-09-14
+ * # 先判断缓存磁盘是否有空间
+ */
+ 
+/** comment by hy 2020-09-14
+ * # 如果有使用缓存盘分配空间
+ */
+/** comment by hy 2020-02-05
+ * # 申请空间,由指定的分配器指定,申请是由后往前进行
+ */
   prealloc_left = alloc->allocate(
     need, min_alloc_size, need,
     0, &prealloc);
@@ -13808,11 +14978,17 @@ int BlueStore::_do_alloc_write(
     }
     return -ENOSPC;
   }
+/** comment by hy 2020-05-30
+ * # 统计信息
+ */
   _collect_allocation_stats(need, min_alloc_size, prealloc.size());
 
   dout(20) << __func__ << " prealloc " << prealloc << dendl;
   auto prealloc_pos = prealloc.begin();
 
+/** comment by hy 2020-02-05
+ * # 缓存中的数据
+ */
   for (auto& wi : wctx->writes) {
     BlobRef b = wi.b;
     bluestore_blob_t& dblob = b->dirty_blob();
@@ -13859,7 +15035,9 @@ int BlueStore::_do_alloc_write(
         dblob.init_csum(csum, csum_order, csum_length);
       }
     }
-
+/** comment by hy 2020-06-25
+ * # 
+ */
     PExtentVector extents;
     int64_t left = final_length;
     while (left > 0) {
@@ -13880,6 +15058,9 @@ int BlueStore::_do_alloc_write(
 	break;
       }
     }
+/** comment by hy 2020-02-05
+ * # 分配的空间纳入管理
+ */
     for (auto& p : extents) {
       txc->allocated.insert(p.offset, p.length);
     }
@@ -13890,6 +15071,9 @@ int BlueStore::_do_alloc_write(
       dblob.calc_csum(b_off, *l);
     }
 
+/** comment by hy 2020-02-05
+ * # 设置使用标识
+ */
     if (wi.mark_unused) {
       ceph_assert(!dblob.is_compressed());
       auto b_end = b_off + wi.bl.length();
@@ -13902,6 +15086,9 @@ int BlueStore::_do_alloc_write(
       }
     }
 
+/** comment by hy 2020-02-05
+ * # 这个逻辑的extent是不是就是内存结构？
+ */
     Extent *le = o->extent_map.set_lextent(coll, wi.logical_offset,
                                            b_off + (wi.b_off0 - wi.b_off),
                                            wi.length0,
@@ -13910,11 +15097,17 @@ int BlueStore::_do_alloc_write(
     wi.b->dirty_blob().mark_used(le->blob_offset, le->length);
     txc->statfs_delta.stored() += le->length;
     dout(20) << __func__ << "  lex " << *le << dendl;
+/** comment by hy 2020-02-05
+ * # 这个buff cache 可以看作包装数据
+ */
     _buffer_cache_write(txc, wi.b, b_off, wi.bl,
                         wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
 
     // queue io
     if (!g_conf()->bluestore_debug_omit_block_device_write) {
+/** comment by hy 2020-02-05
+ * # 延迟处理
+ */
       if (l->length() <= prefer_deferred_size.load()) {
 	dout(20) << __func__ << " deferring small 0x" << std::hex
 		 << l->length() << std::dec << " write via deferred" << dendl;
@@ -13930,9 +15123,18 @@ int BlueStore::_do_alloc_write(
 	op->data = *l;
 	logger->inc(l_bluestore_write_small_deferred);
       } else {
+/** comment by hy 2020-02-05
+ * # 到达处理间隔,安装对应的map进行操作
+ */
 	b->get_blob().map_bl(
 	  b_off, *l,
 	  [&](uint64_t offset, bufferlist& t) {
+/** comment by hy 2020-02-05
+ * # 调用后端存储设备进行处理
+     这里的处理按照要求写入缓存
+       NVMEDevice::aio_write
+       KernelDevice::aio_write
+ */
 	    bdev->aio_write(offset, t, &txc->ioc, false);
 	  });
 	logger->inc(l_bluestore_write_small_new);
@@ -13953,27 +15155,48 @@ void BlueStore::_wctx_finish(
 {
   auto oep = wctx->old_extents.begin();
   while (oep != wctx->old_extents.end()) {
+/** comment by hy 2020-05-31
+ * # 物理范围
+ */
     auto &lo = *oep;
+/** comment by hy 2020-02-05
+ * # 从旧的地方清除
+ */
     oep = wctx->old_extents.erase(oep);
     dout(20) << __func__ << " lex_old " << lo.e << dendl;
     BlobRef b = lo.e.blob;
     const bluestore_blob_t& blob = b->get_blob();
+/** comment by hy 2020-02-05
+ * # 压缩?
+ */
     if (blob.is_compressed()) {
       if (lo.blob_empty) {
 	txc->statfs_delta.compressed() -= blob.get_compressed_payload_length();
       }
       txc->statfs_delta.compressed_original() -= lo.e.length;
     }
+/** comment by hy 2020-02-05
+ * # r = PExtentVector
+ */
     auto& r = lo.r;
     txc->statfs_delta.stored() -= lo.e.length;
     if (!r.empty()) {
       dout(20) << __func__ << "  blob release " << r << dendl;
+/** comment by hy 2020-02-05
+ * # 非独立
+ */
       if (blob.is_shared()) {
 	PExtentVector final;
+/** comment by hy 2020-05-31
+ * # 加载数据库中的 shared blob, bluestore_shared_blob_t
+ */
         c->load_shared_blob(b->shared_blob);
 	bool unshare = false;
 	bool* unshare_ptr =
 	  !maybe_unshared_blobs || b->is_referenced() ? nullptr : &unshare;
+/** comment by hy 2020-02-05
+ * # 有共用
+ */
 	for (auto e : r) {
 	  b->shared_blob->put_ref(
 	    e.offset, e.length, &final,
@@ -13985,6 +15208,9 @@ void BlueStore::_wctx_finish(
 	}
 	dout(20) << __func__ << "  shared_blob release " << final
 		 << " from " << *b->shared_blob << dendl;
+/** comment by hy 2020-02-05
+ * # 放入缓存,如果有共用的 blob,共有的缓存发生在 clone场合
+ */
 	txc->write_shared_blob(b->shared_blob);
 	r.clear();
 	r.swap(final);
@@ -14027,6 +15253,13 @@ void BlueStore::_do_write_data(
   uint64_t end = offset + length;
   bufferlist::iterator p = bl.begin();
 
+/** comment by hy 2020-09-01
+ * # 写对齐
+     这里地址对齐可以进行处理
+     这里设计是不是有点过了?
+     但是测试的时候又没看到双写的现象
+     继续往下跟踪
+ */
   if (offset / min_alloc_size == (end - 1) / min_alloc_size &&
       (length != min_alloc_size)) {
     // we fall within the same block
@@ -14065,6 +15298,9 @@ void BlueStore::_choose_write_options(
    uint32_t fadvise_flags,
    WriteContext *wctx)
 {
+/** comment by hy 2020-08-30
+ * # 默认为 0,
+ */
   if (fadvise_flags & CEPH_OSD_OP_FLAG_FADVISE_WILLNEED) {
     dout(20) << __func__ << " will do buffered write" << dendl;
     wctx->buffered = true;
@@ -14080,6 +15316,9 @@ void BlueStore::_choose_write_options(
 
   // compression parameters
   unsigned alloc_hints = o->onode.alloc_hint_flags;
+/** comment by hy 2020-07-28
+ * # 压缩选项
+ */
   auto cm = select_option(
     "compression_mode",
     comp_mode.load(),
@@ -14203,6 +15442,9 @@ int BlueStore::_do_gc(
       dirty_range_updated = true;
     }
   }
+/** comment by hy 2020-02-05
+ * # 有脏数据
+ */
   if (dirty_range_updated) {
     o->extent_map.fault_range(db, *dirty_start, *dirty_end);
   }
@@ -14252,9 +15494,22 @@ int BlueStore::_do_write(
   auto dirty_end = end;
 
   WriteContext wctx;
+/** comment by hy 2020-02-04
+ * # 设置对应的写选项,与压缩等有关联
+ */
   _choose_write_options(c, o, fadvise_flags, &wctx);
+/** comment by hy 2020-06-25
+ * # 等效于 page fault, 这个时候只是分配空间的所用信息
+     即 object extent 到 blob 信息
+ */
   o->extent_map.fault_range(db, offset, length);
+/** comment by hy 2020-02-05
+ * # 写到缓存中 write_item 中
+ */
   _do_write_data(txc, c, o, offset, length, bl, &wctx);
+/** comment by hy 2020-02-05
+ * # 分配磁盘空间,并根据规则提交数据
+ */
   r = _do_alloc_write(txc, c, o, &wctx);
   if (r < 0) {
     derr << __func__ << " _do_alloc_write failed with " << cpp_strerror(r)
@@ -14262,6 +15517,9 @@ int BlueStore::_do_write(
     goto out;
   }
 
+/** comment by hy 2020-10-20
+ * # gc处理
+ */
   if (wctx.extents_to_gc.empty() ||
       wctx.extents_to_gc.range_start() > offset ||
       wctx.extents_to_gc.range_end() < offset + length) {
@@ -14274,6 +15532,9 @@ int BlueStore::_do_write(
 
   // NB: _wctx_finish() will empty old_extents
   // so we must do gc estimation before that
+/** comment by hy 2020-05-31
+ * # 加载数据,更新缓存
+ */
   _wctx_finish(txc, c, o, &wctx);
   if (end > o->onode.size) {
     dout(20) << __func__ << " extending size to 0x" << std::hex << end
@@ -14281,6 +15542,9 @@ int BlueStore::_do_write(
     o->onode.size = end;
   }
 
+/** comment by hy 2020-02-05
+ * # 因为不够了？清理无效数据
+ */
   if (benefit >= g_conf()->bluestore_gc_enable_total_threshold) {
     wctx.extents_to_gc.union_of(gc.get_extents_to_collect());
     dout(20) << __func__
@@ -14290,6 +15554,9 @@ int BlueStore::_do_write(
   if (!wctx.extents_to_gc.empty()) {
     dout(20) << __func__ << " perform garbage collection" << dendl;
 
+/** comment by hy 2020-02-05
+ * # 清理无效垃圾,其实也是回写磁盘?
+ */
     r = _do_gc(txc, c, o,
       wctx,
       &dirty_start, &dirty_end);
@@ -14301,7 +15568,13 @@ int BlueStore::_do_write(
     dout(20)<<__func__<<" gc range is " << std::hex << dirty_start
 	    << "~" << dirty_end - dirty_start << std::dec << dendl;
   }
+/** comment by hy 2020-02-05
+ * # 压缩是在这个地方做的?
+ */
   o->extent_map.compress_extent_map(dirty_start, dirty_end - dirty_start);
+/** comment by hy 2020-02-05
+ * # 标记脏,等待下次处理?
+ */
   o->extent_map.dirty_range(dirty_start, dirty_end - dirty_start);
 
   r = 0;
@@ -14324,8 +15597,17 @@ int BlueStore::_write(TransContext *txc,
   if (offset + length >= OBJECT_MAX_SIZE) {
     r = -E2BIG;
   } else {
+/** comment by hy 2020-02-04
+ * # 分配id
+ */
     _assign_nid(txc, o);
+/** comment by hy 2020-02-04
+ * # 写到缓存中,这里是不是可以将去操作放到异步流程处理?
+ */
     r = _do_write(txc, c, o, offset, length, bl, fadvise_flags);
+/** comment by hy 2020-02-04
+ * # 将插入列表缓存表
+ */
     txc->write_onode(o);
   }
   dout(10) << __func__ << " " << c->cid << " " << o->oid
@@ -14346,7 +15628,13 @@ int BlueStore::_zero(TransContext *txc,
   if (offset + length >= OBJECT_MAX_SIZE) {
     r = -E2BIG;
   } else {
+/** comment by hy 2020-02-05
+ * # 分配id
+ */
     _assign_nid(txc, o);
+/** comment by hy 2020-02-05
+ * # 将缓存设置0
+ */
     r = _do_zero(txc, c, o, offset, length);
   }
   dout(10) << __func__ << " " << c->cid << " " << o->oid
@@ -14368,9 +15656,21 @@ int BlueStore::_do_zero(TransContext *txc,
   _dump_onode<30>(cct, *o);
 
   WriteContext wctx;
+/** comment by hy 2020-02-05
+ * # 失效化缓存
+ */
   o->extent_map.fault_range(db, offset, length);
+/** comment by hy 2020-02-05
+ * # 设置缓存
+ */
   o->extent_map.punch_hole(c, offset, length, &wctx.old_extents);
+/** comment by hy 2020-02-05
+ * # 设置缓存状态
+ */
   o->extent_map.dirty_range(offset, length);
+/** comment by hy 2020-02-05
+ * # 
+ */
   _wctx_finish(txc, c, o, &wctx);
 
   if (length > 0 && offset + length > o->onode.size) {
@@ -14378,6 +15678,9 @@ int BlueStore::_do_zero(TransContext *txc,
     dout(20) << __func__ << " extending size to " << offset + length
 	     << dendl;
   }
+/** comment by hy 2020-02-05
+ * # 放入缓存 onodes
+ */
   txc->write_onode(o);
 
   dout(10) << __func__ << " " << c->cid << " " << o->oid
@@ -14652,9 +15955,21 @@ void BlueStore::_do_omap_clear(TransContext *txc, OnodeRef& o)
 {
   const string& omap_prefix = o->get_omap_prefix();
   string prefix, tail;
+/** comment by hy 2020-05-30
+ * # 头是'-'
+ */
   o->get_omap_header(&prefix);
+/** comment by hy 2020-05-30
+ * # 尾巴是'~'
+ */
   o->get_omap_tail(&tail);
+/** comment by hy 2020-05-30
+ * # 因为半闭原因
+ */
   txc->t->rm_range_keys(omap_prefix, prefix, tail);
+/** comment by hy 2020-05-30
+ * # 移除最后一个
+ */
   txc->t->rmkey(omap_prefix, tail);
   dout(20) << __func__ << " remove range start: "
            << pretty_binary_string(prefix) << " end: "
@@ -14686,6 +16001,9 @@ int BlueStore::_omap_setkeys(TransContext *txc,
   int r;
   auto p = bl.cbegin();
   __u32 num;
+/** comment by hy 2020-02-05
+ * # 属性在omap中
+ */
   if (!o->onode.has_omap()) {
     if (o->oid.is_pgmeta()) {
       o->onode.set_omap_flags_pgmeta();
@@ -14707,6 +16025,9 @@ int BlueStore::_omap_setkeys(TransContext *txc,
   o->get_omap_key(string(), &final_key);
   size_t base_key_len = final_key.size();
   decode(num, p);
+/** comment by hy 2020-02-05
+ * # 开始更新key数据
+ */
   while (num--) {
     string key;
     bufferlist value;
@@ -14862,8 +16183,17 @@ int BlueStore::_clone(TransContext *txc,
   _assign_nid(txc, newo);
 
   // clone data
+/** comment by hy 2020-02-05
+ * # 元数据先下盘?
+ */
   oldo->flush();
+/** comment by hy 2020-02-05
+ * # 清理数据
+ */
   _do_truncate(txc, c, newo, 0);
+/** comment by hy 2020-02-05
+ * # 克隆的时候使用写时拷贝,默认为true
+ */
   if (cct->_conf->bluestore_clone_cow) {
     _do_clone_range(txc, c, oldo, newo, 0, oldo->onode.size, 0);
   } else {
@@ -14975,6 +16305,9 @@ int BlueStore::_clone_range(TransContext *txc,
   _assign_nid(txc, newo);
 
   if (length > 0) {
+/** comment by hy 2020-07-30
+ * # 默认为真,拷贝的时候使用写时拷贝
+ */
     if (cct->_conf->bluestore_clone_cow) {
       _do_zero(txc, c, newo, dstoff, length);
       _do_clone_range(txc, c, oldo, newo, srcoff, length, dstoff);
@@ -15076,12 +16409,24 @@ int BlueStore::_create_collection(
     }
     auto p = new_coll_map.find(cid);
     ceph_assert(p != new_coll_map.end());
+/** comment by hy 2020-02-03
+ * # 更新缓存
+ */
     *c = p->second;
     (*c)->cnode.bits = bits;
+/** comment by hy 2020-04-22
+ * # collection的map
+ */
     coll_map[cid] = *c;
     new_coll_map.erase(p);
   }
+/** comment by hy 2020-02-03
+ * # 存放数据
+ */
   encode((*c)->cnode, bl);
+/** comment by hy 2020-02-03
+ * # 放入数据库中 将pg信息持久化
+ */
   txc->t->set(PREFIX_COLL, stringify(cid), bl);
   r = 0;
 
@@ -15096,7 +16441,13 @@ int BlueStore::_remove_collection(TransContext *txc, const coll_t &cid,
   dout(15) << __func__ << " " << cid << dendl;
   int r;
 
+/** comment by hy 2020-02-03
+ * # 刷上一代盘
+ */
   (*c)->flush_all_but_last();
+/** comment by hy 2020-02-03
+ * # 上锁执行一个pg的删除
+ */
   {
     std::unique_lock l(coll_lock);
     if (!*c) {
@@ -15123,14 +16474,23 @@ int BlueStore::_remove_collection(TransContext *txc, const coll_t &cid,
     // Enumerate onodes in db, up to nonexistent_count + 1
     // then check if all of them are marked as non-existent.
     // Bypass the check if (next != ghobject_t::get_max())
+/** comment by hy 2020-02-03
+ * # 一下子把所有的都弄出来？
+ */
     r = _collection_list(c->get(), ghobject_t(), ghobject_t::get_max(),
                          nonexistent_count + 1, false, &ls, &next);
     if (r >= 0) {
       // If true mean collecton has more objects than nonexistent_count,
       // so bypass check.
+/** comment by hy 2020-02-03
+ * # 判断有对象
+ */
       bool exists = (!next.is_max());
       for (auto it = ls.begin(); !exists && it < ls.end(); ++it) {
         dout(10) << __func__ << " oid " << *it << dendl;
+/** comment by hy 2020-02-03
+ * # 再次判断容器中有对象
+ */
         auto onode = (*c)->onode_map.lookup(*it);
         exists = !onode || onode->exists;
         if (exists) {
@@ -15162,8 +16522,17 @@ void BlueStore::_do_remove_collection(TransContext *txc,
   coll_map.erase((*c)->cid);
   txc->removed_collections.push_back(*c);
   (*c)->exists = false;
+/** comment by hy 2020-02-03
+ * # 清理 对应的 osr?
+ */
   _osr_register_zombie((*c)->osr.get());
+/** comment by hy 2020-02-03
+ * # 删除数据库中对应的 数据
+ */
   txc->t->rmkey(PREFIX_COLL, stringify((*c)->cid));
+/** comment by hy 2020-02-03
+ * # 清理内存中的容器缓存
+ */
   c->reset();
 }
 
@@ -15183,6 +16552,9 @@ int BlueStore::_split_collection(TransContext *txc,
   // before we split as the new collection's sequencer may need to order
   // this after those writes, and we don't bother with the complexity of
   // moving those TransContexts over to the new osr.
+/** comment by hy 2020-02-03
+ * # 等待 flush 完成后被唤醒
+ */
   _osr_drain_preceding(txc);
 
   // move any cached items (onodes and referenced shared blobs) that will
@@ -15192,8 +16564,14 @@ int BlueStore::_split_collection(TransContext *txc,
   // child.
 
   spg_t pgid, dest_pgid;
+/** comment by hy 2020-02-03
+ * # 获取源collect 对应的 pg
+ */
   bool is_pg = c->cid.is_pg(&pgid);
   ceph_assert(is_pg);
+/** comment by hy 2020-02-03
+ * # 获取目标 collect 对应的 pg
+ */
   is_pg = d->cid.is_pg(&dest_pgid);
   ceph_assert(is_pg);
 
@@ -15201,7 +16579,9 @@ int BlueStore::_split_collection(TransContext *txc,
   ceph_assert(d->onode_map.empty());
   ceph_assert(d->shared_blob_set.empty());
   ceph_assert(d->cnode.bits == bits);
-
+/** comment by hy 2020-02-03
+ * # 对目标进行分裂更新其中的缓存
+ */
   c->split_cache(d.get());
 
   // adjust bits.  note that this will be redundant for all but the first
@@ -15212,6 +16592,9 @@ int BlueStore::_split_collection(TransContext *txc,
 
   bufferlist bl;
   encode(c->cnode, bl);
+/** comment by hy 2020-02-03
+ * # 更新原来的容器的信息
+ */
   txc->t->set(PREFIX_COLL, stringify(c->cid), bl);
 
   dout(10) << __func__ << " " << c->cid << " to " << d->cid << " "
@@ -15236,7 +16619,9 @@ int BlueStore::_merge_collection(
   // flush all previous deferred writes on the source collection to ensure
   // that all deferred writes complete before we merge as the target collection's
   // sequencer may need to order new ops after those writes.
-
+/** comment by hy 2020-02-03
+ * # 等待 flush 完成
+ */
   _osr_drain((*c)->osr.get());
 
   // move any cached items (onodes and referenced shared blobs) that will
@@ -15256,11 +16641,17 @@ int BlueStore::_merge_collection(
   d->cnode.bits = bits;
 
   // behavior depends on target (d) bits, so this after that is updated.
+/** comment by hy 2020-02-03
+ * # 更新缓存
+ */
   (*c)->split_cache(d.get());
 
   // remove source collection
   {
     std::unique_lock l3(coll_lock);
+/** comment by hy 2020-02-03
+ * # 移除容器,这个时候容器已经没有对象
+ */
     _do_remove_collection(txc, c);
   }
 
@@ -16081,6 +17472,10 @@ uint8_t RocksDBBlueFSVolumeSelector::select_prefer_bdev(void* h) {
 
 void RocksDBBlueFSVolumeSelector::get_paths(const std::string& base, paths& res) const
 {
+/** comment by hy 2020-11-20
+ * # 第一是 db, 第二.slow
+     这里的db 包含 db.wal信息, db.block
+ */
   res.emplace_back(base, l_totals[LEVEL_DB - LEVEL_FIRST]);
   res.emplace_back(base + ".slow", l_totals[LEVEL_SLOW - LEVEL_FIRST]);
 }

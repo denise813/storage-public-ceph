@@ -33,6 +33,8 @@ git clean -dxf
 # c) compares higher than any previous commit
 # d) contains the short hash of the commit
 #
+# 与 make-dist 相同不可以?是因为不相同 无法获取下面的版本信息进行操作?
+# 那么将 
 vers=$(git describe --match "v*" | sed s/^v//)
 ./make-dist $vers
 #

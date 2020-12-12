@@ -2415,6 +2415,9 @@ CtPtr ProtocolV1::replace(const AsyncConnectionRef& existing,
               auto back_to_close =
                   std::bind([](ConnectedSocket &cs) mutable { cs.close(); },
                             std::move(cs));
+/** comment by hy 2020-09-22
+ * # 
+ */
               new_center->submit_to(new_center->get_id(),
                                     std::move(back_to_close), true);
               return;
@@ -2448,6 +2451,9 @@ CtPtr ProtocolV1::replace(const AsyncConnectionRef& existing,
             exproto->run_continuation(exproto->send_connect_message_reply(
                 CEPH_MSGR_TAG_RETRY_GLOBAL, reply, authorizer_reply));
           };
+/** comment by hy 2020-09-22
+ * # 
+ */
           if (existing->center->in_thread())
             transfer_existing();
           else
@@ -2455,7 +2461,9 @@ CtPtr ProtocolV1::replace(const AsyncConnectionRef& existing,
                                         std::move(transfer_existing), true);
         },
         std::move(temp_cs));
-
+/** comment by hy 2020-09-22
+ * # 
+ */
     existing->center->submit_to(existing->center->get_id(),
                                 std::move(deactivate_existing), true);
     existing->write_lock.unlock();

@@ -348,6 +348,9 @@ constexpr unsigned long long operator"" _T (unsigned long long n) {
 
 std::vector<Option> get_global_options() {
   return std::vector<Option>({
+/** comment by hy 2020-03-28
+ * # 定制主机名称
+ */
     Option("host", Option::TYPE_STR, Option::LEVEL_BASIC)
     .set_description("local hostname")
     .set_long_description("if blank, ceph assumes the short hostname (hostname -s)")
@@ -355,6 +358,9 @@ std::vector<Option> get_global_options() {
     .add_service("common")
     .add_tag("network"),
 
+/** comment by hy 2020-03-28
+ * # 集群id
+ */
     Option("fsid", Option::TYPE_UUID, Option::LEVEL_BASIC)
     .set_description("cluster fsid (uuid)")
     .set_flag(Option::FLAG_NO_MON_UPDATE)
@@ -362,6 +368,9 @@ std::vector<Option> get_global_options() {
     .add_service("common")
     .add_tag("service"),
 
+/** comment by hy 2020-03-28
+ * # 指定的ip地址,用于虚拟ip?
+ */
     Option("public_addr", Option::TYPE_ADDR, Option::LEVEL_BASIC)
     .set_description("public-facing address to bind to")
     .set_flag(Option::FLAG_STARTUP)
@@ -372,6 +381,9 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_STARTUP)
     .add_service({"mon", "mds", "osd", "mgr"}),
 
+/** comment by hy 2020-03-28
+ * # 初始化绑定的ip 地址
+ */
     Option("public_bind_addr", Option::TYPE_ADDR, Option::LEVEL_ADVANCED)
     .set_default(entity_addr_t())
     .set_flag(Option::FLAG_STARTUP)
@@ -384,6 +396,9 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_STARTUP)
     .add_tag("network"),
 
+/** comment by hy 2020-03-28
+ * # 网段中选择ip
+ */
     Option("public_network", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .add_service({"mon", "mds", "osd", "mgr"})
     .set_flag(Option::FLAG_STARTUP)
@@ -434,6 +449,9 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_STARTUP)
     .add_service("common"),
 
+/** comment by hy 2020-06-30
+ * # mon 域名 服务器
+ */
     Option("mon_dns_srv_name", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default("ceph-mon")
     .set_description("name of DNS SRV record to check for monitor addresses")
@@ -459,6 +477,9 @@ std::vector<Option> get_global_options() {
 			  "whatever options or values are required for us to "
 			  "work will be passed as arguments."),
 
+/** comment by hy 2020-03-28
+ * # 调试信息
+ */
     // lockdep
     Option("lockdep", Option::TYPE_BOOL, Option::LEVEL_DEV)
     .set_description("enable lockdep lock dependency analyzer")
@@ -472,6 +493,9 @@ std::vector<Option> get_global_options() {
     .add_service("common")
     .add_see_also("lockdep"),
 
+/** comment by hy 2020-03-29
+ * # 运行目录
+ */
     Option("run_dir", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default("/var/run/ceph")
     .set_flag(Option::FLAG_STARTUP)
@@ -486,6 +510,9 @@ std::vector<Option> get_global_options() {
     .set_description("path for the runtime control socket file, used by the 'ceph daemon' command")
     .add_service("common"),
 
+/** comment by hy 2020-03-29
+ * # 用户权限
+ */
     Option("admin_socket_mode", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_description("file mode to set for the admin socket file, e.g, '0755'")
     .set_flag(Option::FLAG_STARTUP)
@@ -493,6 +520,9 @@ std::vector<Option> get_global_options() {
     .add_see_also("admin_socket"),
 
     // daemon
+/** comment by hy 2020-03-29
+ * # 守护进程方式
+ */
     Option("daemonize", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
     .set_daemon_default(true)
@@ -548,19 +578,29 @@ std::vector<Option> get_global_options() {
     .set_long_description("This is normally true for daemons and values for libraries.")
     .add_service({"mon", "mgr", "osd", "mds"})
     .add_tag("service"),
-
+/** comment by hy 2020-06-30
+ * # crash 目录
+ */
     Option("crash_dir", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_flag(Option::FLAG_STARTUP)
     .set_default("/var/lib/ceph/crash")
     .set_description("Directory where crash reports are archived"),
 
     // restapi
+/** comment by hy 2020-03-29
+ * # ??
+ */
     Option("restapi_log_level", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_description("default set by python code"),
 
+/** comment by hy 2020-03-29
+ * # ??
+ */
     Option("restapi_base_url", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_description("default set by python code"),
-
+/** comment by hy 2020-06-30
+ * # 纠删码 库文件目录
+ */
     Option("erasure_code_dir", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default(CEPH_PKGLIBDIR"/erasure-code")
     .set_flag(Option::FLAG_STARTUP)
@@ -568,6 +608,9 @@ std::vector<Option> get_global_options() {
     .add_service({"mon", "osd"}),
 
     // logging
+/** comment by hy 2020-06-30
+ * # log 文件
+ */
     Option("log_file", Option::TYPE_STR, Option::LEVEL_BASIC)
     .set_default("")
     .set_daemon_default("/var/log/ceph/$cluster-$name.log")
@@ -578,41 +621,65 @@ std::vector<Option> get_global_options() {
                    "log_to_syslog",
                    "err_to_syslog"}),
 
+/** comment by hy 2020-03-29
+ * # 不下盘的 log trace
+ */
     Option("log_max_new", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(1000)
     .set_description("max unwritten log entries to allow before waiting to flush to the log")
     .add_see_also("log_max_recent"),
 
+/** comment by hy 2020-03-29
+ * # 内存中保存的日志信息
+ */
     Option("log_max_recent", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(500)
     .set_daemon_default(10000)
     .set_description("recent log entries to keep in memory to dump in the event of a crash")
     .set_long_description("The purpose of this option is to log at a higher debug level only to the in-memory buffer, and write out the detailed log messages only if there is a crash.  Only log entries below the lower log level will be written unconditionally to the log.  For example, debug_osd=1/5 will write everything <= 1 to the log unconditionally but keep entries at levels 2-5 in memory.  If there is a seg fault or assertion failure, all entries will be dumped to the log."),
 
+/** comment by hy 2020-06-30
+ * # log to file
+ */
     Option("log_to_file", Option::TYPE_BOOL, Option::LEVEL_BASIC)
     .set_default(true)
     .set_description("send log lines to a file")
     .add_see_also("log_file"),
 
+/** comment by hy 2020-03-29
+ * # log 打印到屏幕
+ */
     Option("log_to_stderr", Option::TYPE_BOOL, Option::LEVEL_BASIC)
     .set_default(true)
     .set_daemon_default(false)
     .set_description("send log lines to stderr"),
 
+/** comment by hy 2020-03-29
+ * # 错误打印到屏幕
+ */
     Option("err_to_stderr", Option::TYPE_BOOL, Option::LEVEL_BASIC)
     .set_default(false)
     .set_daemon_default(true)
     .set_description("send critical error log lines to stderr"),
 
+/** comment by hy 2020-06-30
+ * # 错误日志前缀
+ */
     Option("log_stderr_prefix", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_description("String to prefix log messages with when sent to stderr")
     .set_long_description("This is useful in container environments when combined with mon_cluster_log_to_stderr.  The mon log prefixes each line with the channel name (e.g., 'default', 'audit'), while log_stderr_prefix can be set to 'debug '.")
     .add_see_also("mon_cluster_log_to_stderr"),
 
+/** comment by hy 2020-06-30
+ * # 放入系统 log 中
+ */
     Option("log_to_syslog", Option::TYPE_BOOL, Option::LEVEL_BASIC)
     .set_default(false)
     .set_description("send log lines to syslog facility"),
 
+/** comment by hy 2020-03-29
+ * # 
+ */
     Option("err_to_syslog", Option::TYPE_BOOL, Option::LEVEL_BASIC)
     .set_default(false)
     .set_description("send critical error log lines to syslog facility"),
@@ -621,12 +688,18 @@ std::vector<Option> get_global_options() {
     .set_default(false)
     .set_description("set a process exit handler to ensure the log is flushed on exit"),
 
+/** comment by hy 2020-03-29
+ * # 打印日志的空间监控
+ */
     Option("log_stop_at_utilization", Option::TYPE_FLOAT, Option::LEVEL_BASIC)
     .set_default(.97)
     .set_min_max(0.0, 1.0)
     .set_description("stop writing to the log file when device utilization reaches this ratio")
     .add_see_also("log_file"),
 
+/** comment by hy 2020-03-29
+ * # 发送消息到日志采集模块
+ */
     Option("log_to_graylog", Option::TYPE_BOOL, Option::LEVEL_BASIC)
     .set_default(false)
     .set_description("send log lines to remote graylog server")
@@ -715,6 +788,9 @@ std::vector<Option> get_global_options() {
     .add_service("mon")
     .set_description("Make monitor send cluster log messages to syslog"),
 
+/** comment by hy 2020-03-29
+ * # 日志到系统log
+ */
     Option("mon_cluster_log_to_syslog_level", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default("info")
     .add_service("mon")
@@ -808,6 +884,9 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_NO_MON_UPDATE)
     .set_description(""),
 
+/** comment by hy 2020-06-30
+ * # 大页面支持
+ */
     Option("thp", Option::TYPE_BOOL, Option::LEVEL_DEV)
     .set_default(false)
     .set_flag(Option::FLAG_STARTUP)
@@ -848,11 +927,19 @@ std::vector<Option> get_global_options() {
     .add_see_also("key")
     .add_see_also("keyfile"),
 
+/** comment by hy 2020-06-30
+ * # service 线程 采集间隔
+     services 线程负责 
+     查看磁盘是否可写,网络状态,以及设计的自杀事件
+ */
     Option("heartbeat_interval", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(5)
     .set_flag(Option::FLAG_STARTUP)
     .set_description("Frequency of internal heartbeat checks (seconds)"),
 
+/** comment by hy 2020-03-29
+ * # 检查系统是否可写的文件
+ */
     Option("heartbeat_file", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default("")
     .set_flag(Option::FLAG_STARTUP)
@@ -874,6 +961,9 @@ std::vector<Option> get_global_options() {
     .set_default("async+posix")
     .set_description("Messenger implementation to use for network communication"),
 
+/** comment by hy 2020-06-30
+ * # 业务网与集群网可以分开
+ */
     Option("ms_public_type", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default("")
     .set_flag(Option::FLAG_STARTUP)
@@ -993,6 +1083,9 @@ std::vector<Option> get_global_options() {
     .set_default(false)
     .set_description("Induce a crash/exit on various bugs (for testing purposes)"),
 
+/** comment by hy 2020-03-29
+ * # 离网处理消息的大小
+ */
     Option("ms_dispatch_throttle_bytes", Option::TYPE_SIZE, Option::LEVEL_ADVANCED)
     .set_default(100_M)
     .set_description("Limit messages that are read off the network but still being processed"),
@@ -1055,15 +1148,23 @@ std::vector<Option> get_global_options() {
     .set_default(512)
     .set_description("Size of queue of incoming connections for accept(2)"),
 
-
+/** comment by hy 2020-03-29
+ * # 接收超时
+ */
     Option("ms_connection_ready_timeout", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(10)
     .set_description("Time before we declare a not yet ready connection as dead (seconds)"),
 
+/** comment by hy 2020-03-29
+ * # 900 秒空闲断开
+ */
     Option("ms_connection_idle_timeout", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(900)
     .set_description("Time before an idle connection is closed (seconds)"),
 
+/** comment by hy 2020-03-29
+ * # 默认优先级
+ */
     Option("ms_pq_max_tokens_per_priority", Option::TYPE_UINT, Option::LEVEL_DEV)
     .set_default(16777216)
     .set_description(""),
@@ -1097,6 +1198,9 @@ std::vector<Option> get_global_options() {
     .set_default(0)
     .set_description("Inject various internal delays to induce races (seconds)"),
 
+/** comment by hy 2020-03-29
+ * # 消息不处理?
+ */
     Option("ms_blackhole_osd", Option::TYPE_BOOL, Option::LEVEL_DEV)
     .set_default(false)
     .set_description(""),
@@ -1273,6 +1377,9 @@ std::vector<Option> get_global_options() {
     .set_description("time after which to consider a monitor operation blocked "
                      "after no updates"),
 
+/** comment by hy 2020-03-23
+ * # 一个操作超过5秒认为慢
+ */
     Option("mon_op_log_threshold", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(5)
     .add_service("mon")
@@ -1360,6 +1467,9 @@ std::vector<Option> get_global_options() {
     .add_see_also("mon_osdmap_full_prune_txsize"),
     /* -- mon: osdmap prune (end) -- */
 
+/** comment by hy 2020-03-29
+ * # 最大的osdmap信息
+ */
     Option("mon_osd_cache_size", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(500)
     .add_service("mon")
@@ -1370,6 +1480,9 @@ std::vector<Option> get_global_options() {
     .add_service("mon")
     .set_description("The minimum amount of bytes to be kept mapped in memory for osd monitor caches."),
 
+/** comment by hy 2020-03-29
+ * # mon内存限制
+ */
     Option("mon_memory_target", Option::TYPE_SIZE, Option::LEVEL_BASIC)
     .set_default(2_G)
     .set_flag(Option::FLAG_RUNTIME)
@@ -1387,6 +1500,9 @@ std::vector<Option> get_global_options() {
     .add_service("mon")
     .set_description("worker threads for CPU intensive background work"),
 
+/** comment by hy 2020-03-31
+ * # 一次 osdmap 推送是的个数
+ */
     Option("mon_osd_mapping_pgs_per_chunk", Option::TYPE_INT, Option::LEVEL_DEV)
     .set_default(4096)
     .add_service("mon")
@@ -1402,6 +1518,9 @@ std::vector<Option> get_global_options() {
     .add_service("mon")
     .set_description("maximum number of PGs the mon will create at once"),
 
+/** comment by hy 2020-03-31
+ * # osd 对应的容器数量
+ */
     Option("mon_osd_max_initial_pgs", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(1024)
     .add_service("mon")
@@ -1434,6 +1553,9 @@ std::vector<Option> get_global_options() {
     .add_service("mon")
     .set_description("halflife of OSD 'lagginess' factor"),
 
+/** comment by hy 2020-03-31
+ * # 
+ */
     Option("mon_osd_laggy_weight", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(.3)
     .set_min_max(0.0, 1.0)
@@ -1477,6 +1599,9 @@ std::vector<Option> get_global_options() {
     .add_service("mon")
     .set_description("mark any new OSD that comes up 'in'"),
 
+/** comment by hy 2020-03-31
+ * # 设置osd故障 out 的时间
+ */
     Option("mon_osd_destroyed_out_interval", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(600)
     .add_service("mon")
@@ -1505,7 +1630,9 @@ std::vector<Option> get_global_options() {
     .add_service("mon")
     .set_description("do not automatically mark OSDs 'out' if fewer than this many OSDs are 'in'")
     .add_see_also("mon_osd_down_out_interval"),
-
+/** comment by hy 2020-03-31
+ * # 慢速io操作判断标准
+ */
     Option("mon_osd_warn_op_age", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(32)
     .add_service("mgr")
@@ -1516,6 +1643,9 @@ std::vector<Option> get_global_options() {
     .add_service("mon")
     .set_description("issue OSD_TOO_MANY_REPAIRS health warning if an OSD has more than this many read repairs"),
 
+/** comment by hy 2020-03-31
+ * # 慢速io操作128s将判断为error
+ */
     Option("mon_osd_err_op_age_ratio", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(128)
     .add_service("mgr")
@@ -1526,16 +1656,25 @@ std::vector<Option> get_global_options() {
     .add_service("mon")
     .set_description("minimize peering work by priming pg_temp values after a map change"),
 
+/** comment by hy 2020-03-31
+ * # 临时pg变化间隔时间用于合并
+ */
     Option("mon_osd_prime_pg_temp_max_time", Option::TYPE_FLOAT, Option::LEVEL_DEV)
     .set_default(.5)
     .add_service("mon")
     .set_description("maximum time to spend precalculating PG mappings on map change (seconds)"),
 
+/** comment by hy 2020-03-31
+ * # 
+ */
     Option("mon_osd_prime_pg_temp_max_estimate", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(.25)
     .add_service("mon")
     .set_description("calculate all PG mappings if estimated fraction of PGs that change is above this amount"),
 
+/** comment by hy 2020-03-31
+ * # 
+ */
     Option("mon_stat_smooth_intervals", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(6)
     .set_min(1)
@@ -1660,6 +1799,9 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_CLUSTER_CREATE)
     .set_description("full ratio of OSDs to be set during initial creation of the cluster"),
 
+/** comment by hy 2020-03-27
+ * # 限制回填数
+ */
     Option("mon_osd_backfillfull_ratio", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(.90)
     .set_flag(Option::FLAG_NO_MON_UPDATE)
@@ -2427,6 +2569,9 @@ std::vector<Option> get_global_options() {
     .set_default(true)
     .set_description(""),
 
+/** comment by hy 2020-03-27
+ * # 每个osdback fill 的最大数
+ */
     Option("osd_max_backfills", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(1)
     .set_description("Maximum number of concurrent local and remote backfills or recoveries per OSD ")
@@ -2437,6 +2582,9 @@ std::vector<Option> get_global_options() {
     .set_description("Minimum priority below which recovery is not performed")
     .set_long_description("The purpose here is to prevent the cluster from doing *any* lower priority work (e.g., rebalancing) below this threshold and focus solely on higher priority work (e.g., replicating degraded objects)."),
 
+/** comment by hy 2020-03-27
+ * # 重试等候秒数
+ */
     Option("osd_backfill_retry_interval", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(30.0)
     .set_description("how frequently to retry backfill reservations after being denied (e.g., due to a full OSD)"),
@@ -2484,6 +2632,9 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_CREATE)
     .set_description("uuid label for a new OSD"),
 
+/** comment by hy 2020-11-20
+ * # 数据信息信息
+ */
     Option("osd_data", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default("/var/lib/ceph/osd/$cluster-$id")
     .set_flag(Option::FLAG_NO_MON_UPDATE)
@@ -2813,6 +2964,9 @@ std::vector<Option> get_global_options() {
     .set_default(true)
     .set_description(""),
 
+/** comment by hy 2020-04-22
+ * # 底层存储引擎 缓存分片数量,也就是缓存的队伍数
+ */
     Option("osd_num_cache_shards", Option::TYPE_SIZE, Option::LEVEL_ADVANCED)
     .set_default(32)
     .set_flag(Option::FLAG_STARTUP)
@@ -2953,6 +3107,9 @@ std::vector<Option> get_global_options() {
     .set_description("Feed a pullee, and force primary to pull "
                      "a currently missing object from it"),
 
+/** comment by hy 2020-03-27
+ * # 回填的最小数
+ */
     Option("osd_backfill_scan_min", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(64)
     .set_description(""),
@@ -2969,10 +3126,16 @@ std::vector<Option> get_global_options() {
     .set_default(150)
     .set_description(""),
 
+/** comment by hy 2020-03-26
+ * # 确保一定落盘的时间
+ */
     Option("osd_recovery_sleep", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("Time in seconds to sleep before next recovery or backfill op"),
 
+/** comment by hy 2020-03-26
+ * # 确保一定落盘的时间
+ */
     Option("osd_recovery_sleep_hdd", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(0.1)
     .set_description("Time in seconds to sleep before next recovery or backfill op for HDDs"),
@@ -2987,6 +3150,9 @@ std::vector<Option> get_global_options() {
     .set_description("Time in seconds to sleep before next recovery or backfill op when data is on HDD and journal is on SSD")
     .add_see_also("osd_recovery_sleep"),
 
+/** comment by hy 2020-03-27
+ * # 异步删除后等待时间
+ */
     Option("osd_snap_trim_sleep", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("Time in seconds to sleep before next snap trim (overrides values below)"),
@@ -3108,6 +3274,9 @@ std::vector<Option> get_global_options() {
     .set_default(0)
     .set_description(""),
 
+/** comment by hy 2020-03-27
+ * # 每个osd并发恢复请求数
+ */
     Option("osd_recovery_max_active", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("Number of simultaneous active recovery operations per OSD (overrides _ssd and _hdd if non-zero)")
@@ -3587,6 +3756,9 @@ std::vector<Option> get_global_options() {
     .set_default(2)
     .set_description(""),
 
+/** comment by hy 2020-08-26
+ * # rocksdb 中 leveldb 的参数
+ */
     Option("leveldb_log_to_ceph_log", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(true)
     .set_description(""),
@@ -3627,6 +3799,9 @@ std::vector<Option> get_global_options() {
     .set_default(false)
     .set_description(""),
 
+/** comment by hy 2020-08-26
+ * # rocksdb 的一些参数
+ */
     Option("rocksdb_log_to_ceph_log", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(true)
     .set_description(""),
@@ -3706,6 +3881,9 @@ std::vector<Option> get_global_options() {
     .set_default(4_K)
     .set_description("The block size for index partitions. (0 = rocksdb default)"),
 
+/** comment by hy 2020-06-08
+ * # 默认才是
+ */
     Option("mon_rocksdb_options", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default("write_buffer_size=33554432,"
 		 "compression=kNoCompression,"
@@ -3716,6 +3894,9 @@ std::vector<Option> get_global_options() {
     .set_default(63)
     .set_description(""),
 
+/** comment by hy 2020-03-27
+ * # 恢复操作的优先级
+ */
     Option("osd_recovery_op_priority", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(3)
     .set_description("Priority to use for recovery operations if not specified for the pool"),
@@ -3752,6 +3933,9 @@ std::vector<Option> get_global_options() {
     .set_default(120)
     .set_description(""),
 
+/** comment by hy 2020-03-27
+ * # 和恢复操作的优先级有什么区别
+ */
     Option("osd_recovery_priority", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(5)
     .set_description("Priority of recovery in the work queue")
@@ -3848,6 +4032,9 @@ std::vector<Option> get_global_options() {
     .set_default(true)
     .set_description(""),
 
+/** comment by hy 2020-03-28
+ * # 默认一个osd 4G 空间
+ */
     Option("osd_memory_target", Option::TYPE_SIZE, Option::LEVEL_BASIC)
     .set_default(4_G)
     .set_min(896_M)
@@ -3974,6 +4161,9 @@ std::vector<Option> get_global_options() {
     .set_default(false)
     .set_description(""),
 
+/** comment by hy 2020-07-29
+ * # bluefs 配置参数
+ */
     Option("bluefs_alloc_size", Option::TYPE_SIZE, Option::LEVEL_ADVANCED)
     .set_default(1_M)
     .set_description("Allocation unit size for DB and WAL devices"),
@@ -4013,7 +4203,18 @@ std::vector<Option> get_global_options() {
     Option("bluefs_buffered_io", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
     .set_description("Enabled buffered IO for bluefs reads.")
-    .set_long_description("When this option is enabled, bluefs will in some cases perform buffered reads.  This allows the kernel page cache to act as a secondary cache for things like RocksDB compaction.  For example, if the rocksdb block cache isn't large enough to hold blocks from the compressed SST files itself, they can be read from page cache instead of from the disk.  This option previously was enabled by default, however in some test cases it appears to cause excessive swap utilization by the linux kernel and a large negative performance impact after several hours of run time.  Please exercise caution when enabling."),
+    .set_long_description("When this option is enabled, "
+        "bluefs will in some cases perform buffered reads."
+        "This allows the kernel page cache to act as a secondary cache "
+        "for things like RocksDB compaction."
+        "For example, if the rocksdb block cache isn't large enough to "
+        "hold blocks from the compressed SST files itself, "
+        "they can be read from page cache instead of from the disk. "
+        "This option previously was enabled by default, "
+        "however in some test cases it appears to cause "
+        "excessive swap utilization by the linux kernel and "
+        "a large negative performance impact after several hours of run time. "
+        " Please exercise caution when enabling."),
 
     Option("bluefs_sync_write", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
@@ -4110,11 +4311,17 @@ std::vector<Option> get_global_options() {
     .set_default(5)
     .set_description("Time period to wait if there is no completed I/O from polling"),
 
+/** comment by hy 2020-09-09
+ * # block 设备路径
+ */
     Option("bluestore_block_path", Option::TYPE_STR, Option::LEVEL_DEV)
     .set_default("")
     .set_flag(Option::FLAG_CREATE)
     .set_description("Path to block device/file"),
 
+/** comment by hy 2020-04-13
+ * # 测试参数 2G
+ */
     Option("bluestore_block_size", Option::TYPE_SIZE, Option::LEVEL_DEV)
     .set_default(100_G)
     .set_flag(Option::FLAG_CREATE)
@@ -4130,7 +4337,9 @@ std::vector<Option> get_global_options() {
     .set_default("")
     .set_flag(Option::FLAG_CREATE)
     .set_description("Path for db block device"),
-
+/** comment by hy 2020-04-13
+ * # 测试参数 1G
+ */
     Option("bluestore_block_db_size", Option::TYPE_UINT, Option::LEVEL_DEV)
     .set_default(0)
     .set_flag(Option::FLAG_CREATE)
@@ -4147,7 +4356,9 @@ std::vector<Option> get_global_options() {
     .set_default("")
     .set_flag(Option::FLAG_CREATE)
     .set_description("Path to block device/file backing bluefs wal"),
-
+/** comment by hy 2020-04-13
+ * # 测试参数是 512M
+ */
     Option("bluestore_block_wal_size", Option::TYPE_SIZE, Option::LEVEL_DEV)
     .set_default(96_M)
     .set_flag(Option::FLAG_CREATE)
@@ -4336,11 +4547,16 @@ std::vector<Option> get_global_options() {
     .set_default(64)
     .set_description("Max pinned cache entries we consider before giving up"),
 
+/** comment by hy 2020-04-22
+ * # 数据的缓存队列
+ */
     Option("bluestore_cache_type", Option::TYPE_STR, Option::LEVEL_DEV)
     .set_default("2q")
     .set_enum_allowed({"2q", "lru"})
     .set_description("Cache replacement algorithm"),
-
+/** comment by hy 2020-04-22
+ * # 数据队列读的比例
+ */
     Option("bluestore_2q_cache_kin_ratio", Option::TYPE_FLOAT, Option::LEVEL_DEV)
     .set_default(.5)
     .set_description("2Q paper suggests .5"),
@@ -4349,6 +4565,9 @@ std::vector<Option> get_global_options() {
     .set_default(.5)
     .set_description("2Q paper suggests .5"),
 
+/** comment by hy 2020-09-10
+ * # 缓存空间大小，需要根据物理内存大小以及osd的个数设置合理值
+ */
     Option("bluestore_cache_size", Option::TYPE_SIZE, Option::LEVEL_DEV)
     .set_default(0)
     .set_description("Cache size (in bytes) for BlueStore")
@@ -4363,12 +4582,17 @@ std::vector<Option> get_global_options() {
     .set_default(3_G)
     .set_description("Default bluestore_cache_size for non-rotational (solid state) media")
     .add_see_also("bluestore_cache_size"),
-
+/** comment by hy 2020-04-22
+ * # 元数据占比
+ */
     Option("bluestore_cache_meta_ratio", Option::TYPE_FLOAT, Option::LEVEL_DEV)
     .set_default(.4)
     .add_see_also("bluestore_cache_size")
     .set_description("Ratio of bluestore cache to devote to metadata"),
 
+/** comment by hy 2020-09-10
+ * # rocksdb database cache占用缓存的比率
+ */
     Option("bluestore_cache_kv_ratio", Option::TYPE_FLOAT, Option::LEVEL_DEV)
     .set_default(.4)
     .add_see_also("bluestore_cache_size")
@@ -4420,14 +4644,54 @@ std::vector<Option> get_global_options() {
     .set_default(3)
     .set_description("max duration to force deferred submit"),
 
+/** comment by hy 2020-06-08
+ * # 
+     write_buffer_size -
+         控制memtable的大小，ceph默认是256MB
+   # max_write_buffer_number -
+         控制内存中memtable的最大数量，根据内存大小来设置
+   # min_write_buffer_number_to_merge -
+         控制触发flush所需要的immutable数
+   max_background_compactions -
+         SST文件合并并发线程数
+   level0_file_num_compaction_trigger - 
+       触发level0向level1合并所需要的level0的文件数目
+   max_bytes_for_level_base - level1的大小，
+        一旦level1的文件总大小超过该值，就会触发level1向下合并
+   target_file_size_base -
+        level1-levelN的单个SST文件大小
+   max_bytes_for_level_multiplier -
+        level1-levelN中，相邻两个level的大小的差距，
+        例如level1为256MB，差距为10的话，level2就为2560MB
+   num_levels - 最多可以有几个level
+ */
     Option("bluestore_rocksdb_options", Option::TYPE_STR, Option::LEVEL_ADVANCED)
-    .set_default("compression=kNoCompression,max_write_buffer_number=4,min_write_buffer_number_to_merge=1,recycle_log_file_num=4,write_buffer_size=268435456,writable_file_max_buffer_size=0,compaction_readahead_size=2097152,max_background_compactions=2")
+    .set_default("compression=kNoCompression,max_write_buffer_number=4,"
+      "min_write_buffer_number_to_merge=1,recycle_log_file_num=4,"
+      "write_buffer_size=268435456,writable_file_max_buffer_size=0,"
+      "compaction_readahead_size=2097152,max_background_compactions=2")
     .set_description("Rocksdb options"),
 
     Option("bluestore_rocksdb_cf", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
     .set_description("Enable use of rocksdb column families for bluestore metadata"),
 
+/** comment by hy 2020-07-30
+ * # M表示
+     P表示
+     L表示
+        const string PREFIX_SUPER = "S";       // field -> value
+        const string PREFIX_STAT = "T";        // field -> value(int64 array)
+        const string PREFIX_COLL = "C";        // collection name -> cnode_t
+        const string PREFIX_OBJ = "O";         // object name -> onode_t
+        const string PREFIX_OMAP = "M";        // u64 + keyname -> value
+        const string PREFIX_PGMETA_OMAP = "P"; // u64 + keyname -> value(for meta coll)
+        const string PREFIX_PERPOOL_OMAP = "m"; // s64 + u64 + keyname -> value
+        const string PREFIX_DEFERRED = "L";    // id -> deferred_transaction_t
+        const string PREFIX_ALLOC = "B";       // u64 offset -> u64 length (freelist)
+        const string PREFIX_ALLOC_BITMAP = "b";// (see BitmapFreelistManager)
+        const string PREFIX_SHARED_BLOB = "X"; // u64 offset -> shared_blob_t
+ */
     Option("bluestore_rocksdb_cfs", Option::TYPE_STR, Option::LEVEL_DEV)
     .set_default("M= P= L=")
     .set_description("List of whitespace-separate key/value pairs where key is CF name and value is CF options"),
@@ -4460,6 +4724,9 @@ std::vector<Option> get_global_options() {
     .set_default(false)
     .set_description("Run deep fsck after mkfs"),
 
+/** comment by hy 2020-07-30
+ * # 提交前先sync 之前缓存中的事务
+ */
     Option("bluestore_sync_submit_transaction", Option::TYPE_BOOL, Option::LEVEL_DEV)
     .set_default(false)
     .set_description("Try to submit metadata transaction to rocksdb in queuing thread context"),
@@ -4483,6 +4750,9 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_RUNTIME)
     .set_description("Maximum bytes for deferred writes before we throttle IO submission"),
 
+/** comment by hy 2020-08-15
+ * # 这是为了聚合使用与延迟一起进行操作
+ */
     Option("bluestore_throttle_cost_per_io", Option::TYPE_SIZE, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_flag(Option::FLAG_RUNTIME)
@@ -4500,6 +4770,10 @@ std::vector<Option> get_global_options() {
     .set_description("Default bluestore_throttle_cost_per_io for non-rotation (solid state) media")
     .add_see_also("bluestore_throttle_cost_per_io"),
 
+/** comment by hy 2020-07-30
+ * # 操作数量延迟 bluestore_deferred_batch_ops
+     如果设置了该值则按照该值,否则使用根据设备定制的参考值
+ */
     Option("bluestore_deferred_batch_ops", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_flag(Option::FLAG_RUNTIME)
@@ -4517,6 +4791,9 @@ std::vector<Option> get_global_options() {
     .set_description("Default bluestore_deferred_batch_ops for non-rotational (solid state) media")
     .add_see_also("bluestore_deferred_batch_ops"),
 
+/** comment by hy 2020-07-30
+ * # 一次性预分配id
+ */
     Option("bluestore_nid_prealloc", Option::TYPE_INT, Option::LEVEL_DEV)
     .set_default(1024)
     .set_description("Number of unique object ids to preallocate at a time"),
@@ -4576,6 +4853,9 @@ std::vector<Option> get_global_options() {
     .set_default(0)
     .set_description(""),
 
+/** comment by hy 2020-08-01
+ * # by pass
+ */
     Option("bluestore_debug_omit_block_device_write", Option::TYPE_BOOL, Option::LEVEL_DEV)
     .set_default(false)
     .set_description(""),
@@ -4640,15 +4920,24 @@ std::vector<Option> get_global_options() {
     .set_default("default")
     .set_enum_allowed({"default", "hdd", "ssd"})
     .set_description("Enforces specific hw profile settings")
-    .set_long_description("'hdd' enforces settings intended for BlueStore above a rotational drive. 'ssd' enforces settings intended for BlueStore above a solid drive. 'default' - using settings for the actual hardware."),
+    .set_long_description("'hdd' enforces settings intended for "
+      "BlueStore above a rotational drive. "
+      "'ssd' enforces settings intended for BlueStore above a solid drive. "
+      "'default' - using settings for the actual hardware."),
 
+/** comment by hy 2020-07-30
+ * # 最小空间
+ */
     Option("bluestore_avl_alloc_bf_threshold", Option::TYPE_UINT, Option::LEVEL_DEV)
     .set_default(131072)
-    .set_description(""),
+    .set_description("unit is kb,defult is 128M"),
 
+/** comment by hy 2020-07-30
+ * # 保持空间的空闲度
+ */
     Option("bluestore_avl_alloc_bf_free_pct", Option::TYPE_UINT, Option::LEVEL_DEV)
     .set_default(4)
-    .set_description(""),
+    .set_description("unit is %"),
 
     Option("bluestore_hybrid_alloc_mem_cap", Option::TYPE_UINT, Option::LEVEL_DEV)
     .set_default(64_M)
@@ -4658,17 +4947,27 @@ std::vector<Option> get_global_options() {
     .set_default("use_some_extra")
     .set_enum_allowed({ "rocksdb_original", "use_some_extra" })
     .set_description("Determines bluefs volume selection policy")
-    .set_long_description("Determines bluefs volume selection policy. 'use_some_extra' policy allows to override RocksDB level granularity and put high level's data to faster device even when the level doesn't completely fit there"),
+    .set_long_description("Determines bluefs volume selection policy. "
+      "'use_some_extra' policy allows to override RocksDB level granularity "
+      "and put high level's data to faster device even when "
+      "the level doesn't completely fit there"),
 
     Option("bluestore_volume_selection_reserved_factor", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
       .set_flag(Option::FLAG_STARTUP)
       .set_default(2.0)
-      .set_description("DB level size multiplier. Determines amount of space at DB device to bar from the usage when 'use some extra' policy is in action. Reserved size is determined as sum(L_max_size[0], L_max_size[L-1]) + L_max_size[L] * this_factor"),
+      .set_description("DB level size multiplier. "
+        "Determines amount of space at DB device to bar "
+        "from the usage when 'use some extra' policy is in action. "
+        "Reserved size is determined as "
+        "sum(L_max_size[0], L_max_size[L-1]) + L_max_size[L] * this_factor"),
 
     Option("bluestore_volume_selection_reserved", Option::TYPE_INT, Option::LEVEL_ADVANCED)
       .set_flag(Option::FLAG_STARTUP)
       .set_default(0)
-      .set_description("Space reserved at DB device and not allowed for 'use some extra' policy usage. Overrides 'bluestore_volume_selection_reserved_factor' setting and introduces straightforward limit."),
+      .set_description("Space reserved at DB device "
+      "and not allowed for 'use some extra' policy usage. "
+      "Overrides 'bluestore_volume_selection_reserved_factor' "
+      "setting and introduces straightforward limit."),
 
     Option("bluestore_ioring", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
@@ -6490,7 +6789,9 @@ std::vector<Option> get_rgw_options() {
     .set_long_description(
         "The default quota configuration for total size of objects for a single user. A "
         "negative number means 'unlimited'."),
-
+/** comment by hy 2020-08-06
+ * # 分段上传的最小单位
+ */
     Option("rgw_multipart_min_part_size", Option::TYPE_SIZE, Option::LEVEL_ADVANCED)
     .set_default(5_M)
     .set_description("Minimum S3 multipart-upload part size")
@@ -6498,6 +6799,9 @@ std::vector<Option> get_rgw_options() {
         "When doing a multipart upload, each part (other than the last part) should be "
         "at least this size."),
 
+/** comment by hy 2020-08-06
+ * # 分段上传的最大段数
+ */
     Option("rgw_multipart_part_upload_limit", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(10000)
     .set_description("Max number of parts in multipart upload"),
@@ -7111,6 +7415,9 @@ static std::vector<Option> get_rbd_options() {
 	return 0;
       }),
 
+/** comment by hy 2020-04-05
+ * # 创建rbd 操作的线程数
+ */
     Option("rbd_op_threads", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(1)
     .set_description("number of threads to utilize for internal processing"),
@@ -7400,50 +7707,86 @@ static std::vector<Option> get_rbd_options() {
     .set_default(0)
     .set_description("maximum number of object sets a journal client can be behind before it is automatically unregistered"),
 
+/** comment by hy 2020-03-21
+ * # 0，表示关闭对应的操作的qos控制，如果>0，则表示开启控制
+ */
     Option("rbd_qos_iops_limit", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("the desired limit of IO operations per second"),
 
+/** comment by hy 2020-03-21
+ * # 0，表示关闭对应的操作的qos控制，如果>0，则表示开启控制
+ */
     Option("rbd_qos_bps_limit", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("the desired limit of IO bytes per second"),
 
+/** comment by hy 2020-03-21
+ * #0，表示关闭对应的操作的qos控制，如果>0，则表示开启控制
+ */
     Option("rbd_qos_read_iops_limit", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("the desired limit of read operations per second"),
 
+/** comment by hy 2020-03-21
+ * # 0，表示关闭对应的操作的qos控制，如果>0，则表示开启控制
+ */
     Option("rbd_qos_write_iops_limit", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("the desired limit of write operations per second"),
 
+/** comment by hy 2020-03-21
+ * # 0，表示关闭对应的操作的qos控制，如果>0，则表示开启控制
+ */
     Option("rbd_qos_read_bps_limit", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("the desired limit of read bytes per second"),
 
+/** comment by hy 2020-03-21
+ * # 0，表示关闭对应的操作的qos控制，如果>0，则表示开启控制
+ */
     Option("rbd_qos_write_bps_limit", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("the desired limit of write bytes per second"),
 
+/** comment by hy 2020-03-21
+ * # 0，表示关闭对应的操作的qos控制，如果>0，则表示开启控制
+ */
     Option("rbd_qos_iops_burst", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("the desired burst limit of IO operations"),
 
+/** comment by hy 2020-03-21
+ * # 0，表示关闭对应的操作的qos控制，如果>0，则表示开启控制
+ */
     Option("rbd_qos_bps_burst", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("the desired burst limit of IO bytes"),
 
+/** comment by hy 2020-03-21
+ * # 0，表示关闭对应的操作的qos控制，如果>0，则表示开启控制
+ */
     Option("rbd_qos_read_iops_burst", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("the desired burst limit of read operations"),
 
+/** comment by hy 2020-03-21
+ * # 0，表示关闭对应的操作的qos控制，如果>0，则表示开启控制
+ */
     Option("rbd_qos_write_iops_burst", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("the desired burst limit of write operations"),
 
+/** comment by hy 2020-03-21
+ * # 0，表示关闭对应的操作的qos控制，如果>0，则表示开启控制
+ */
     Option("rbd_qos_read_bps_burst", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("the desired burst limit of read bytes"),
 
+/** comment by hy 2020-03-21
+ * # 0，表示关闭对应的操作的qos控制，如果>0，则表示开启控制
+ */
     Option("rbd_qos_write_bps_burst", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_description("the desired burst limit of write bytes"),

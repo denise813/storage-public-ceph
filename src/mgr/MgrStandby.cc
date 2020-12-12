@@ -121,7 +121,9 @@ int MgrStandby::init()
     client_messenger->wait();
     return -1;
   }
-
+/** comment by hy 2020-04-23
+ * # 订阅mgrmap
+ */
   monc.sub_want("mgrmap", 0, 0);
 
   monc.set_want_keys(CEPH_ENTITY_TYPE_MON|CEPH_ENTITY_TYPE_OSD
@@ -255,6 +257,9 @@ void MgrStandby::send_beacon()
 void MgrStandby::tick()
 {
   dout(10) << __func__ << dendl;
+/** comment by hy 2020-04-23
+ * # 向monitor发送beacon消息，告诉自己已经启动
+ */
   send_beacon();
 
   timer.add_event_after(
@@ -389,10 +394,19 @@ void MgrStandby::handle_mgr_map(ref_t<MMgrMap> mmap)
 
   if (active_in_map) {
     if (!active_mgr) {
+/** comment by hy 2020-04-23
+ * # 如果自己在mgrmap中是active的，创建实例mgr
+     后续将判断自己是不是在这个active 中
+     如果是将准备处理命令,否是将拒绝处理命令
+ */
       dout(1) << "Activating!" << dendl;
       active_mgr.reset(new Mgr(&monc, map, &py_module_registry,
                                client_messenger.get(), &objecter,
 			       &client, clog, audit_clog));
+/** comment by hy 2020-04-23
+ * # 执行初始化
+     Mgr::background_init
+ */
       active_mgr->background_init(new LambdaContext(
             [this](int r){
               // Advertise our active-ness ASAP instead of waiting for
@@ -414,6 +428,9 @@ void MgrStandby::handle_mgr_map(ref_t<MMgrMap> mmap)
       available_in_map = true;
     }
   } else if (active_mgr != nullptr) {
+/** comment by hy 2020-04-23
+ * # 否则，销毁实例
+ */
     derr << "I was active but no longer am" << dendl;
     respawn();
   } else {
@@ -439,6 +456,11 @@ bool MgrStandby::ms_dispatch2(const ref_t<Message>& m)
   if (active_mgr) {
     auto am = active_mgr;
     lock.unlock();
+/** comment by hy 2020-07-31
+ * # 转到主Mgr 上
+     Mgr::ms_dispatch2
+     而这个是只是处理map
+ */
     handled = am->ms_dispatch2(m);
     lock.lock();
   }

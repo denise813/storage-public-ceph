@@ -1272,6 +1272,12 @@ void get_device_metadata(
   (*pm)["devices"] = stringify(devnames);
   string &devids = (*pm)["device_ids"];
   string &devpaths = (*pm)["device_paths"];
+/** comment by hy 2020-09-18
+ * # 获得设备信息
+ */
+/** comment by hy 2020-09-18
+ * # 判断设备的真实路径
+ */
   for (auto& dev : devnames) {
     string err;
     string id = get_device_id(dev, &err);

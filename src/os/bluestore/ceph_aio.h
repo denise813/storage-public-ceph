@@ -20,6 +20,9 @@
 
 struct aio_t {
 #if defined(HAVE_LIBAIO)
+/** comment by hy 2020-04-22
+ * # libaio相关的结构体
+ */
   struct iocb iocb{};  // must be first element; see shenanigans in aio_queue_t
 #elif defined(HAVE_POSIXAIO)
   //  static long aio_listio_max = -1;
@@ -45,6 +48,9 @@ struct aio_t {
     offset = _offset;
     length = len;
 #if defined(HAVE_LIBAIO)
+/** comment by hy 2020-04-22
+ * # 准备数据
+ */
     io_prep_pwritev(&iocb, fd, &iov[0], iov.size(), offset);
 #elif defined(HAVE_POSIXAIO)
     n_aiocb = iov.size();
@@ -153,7 +159,14 @@ struct aio_queue_t final : public io_queue_t {
     }
   }
 
+/** comment by hy 2020-08-25
+ * # 提交IO
+ */
   int submit_batch(aio_iter begin, aio_iter end, uint16_t aios_size,
 		   void *priv, int *retries) final;
+
+/** comment by hy 2020-08-25
+ * # 收割完成的IO
+ */
   int get_next_completed(int timeout_ms, aio_t **paio, int max) final;
 };

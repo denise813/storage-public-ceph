@@ -408,6 +408,9 @@ static int crush_bucket_choose(const struct crush_bucket *in,
 			(const struct crush_bucket_straw *)in,
 			x, r);
 	case CRUSH_BUCKET_STRAW2:
+/** comment by hy 2020-04-02
+ * # 对所有待选元素计算值
+ */
 		return bucket_straw2_choose(
 			(const struct crush_bucket_straw2 *)in,
 			x, r, arg, position);
@@ -440,7 +443,9 @@ static int is_out(const struct crush_map *map,
 /**
  * crush_choose_firstn - choose numrep distinct items of given type
  * @map: the crush_map
- * @bucket: the bucket we are choose an item from
+ * @work input items
+ * @bucket: the bucket we are choose an item from 是否选择这个 bucket
+ * @ weight : osd wight 0-1
  * @x: crush input value
  * @numrep: the number of items to choose
  * @type: the type of item to choose
@@ -504,9 +509,25 @@ parent_r %d stable %d\n",
 
 			/* choose through intervening buckets */
 			flocal = 0;
+/** comment by hy 2020-11-01
+ * # 选择到子节点
+ */
 			do {
 				collide = 0;
 				retry_bucket = 0;
+/** comment by hy 2020-11-01
+ * # parent_r = 0 rep 表示 副本号 r 表示 迭代次数号
+     如 副本 3 迭代 为 第二次 可能 r = 4
+     rep=0, r=0 ---> ceph0, chooseleaf
+     rep=0, r=0 ---> osd.0, OK
+     rep=1, r=1 ---> ceph1, chooseleaf
+     rep=1, r=1 ---> osd.2, OK
+     执行 MAX_TRIES 次
+     rep=2, r=2 ---> ceph0, collide
+     rep=2, r=3 ---> ceph1, collide
+     rep=2, r=4 ---> ceph2, chooseleaf
+     rep=2, r=2 ---> osd.4, OK
+ */
 				r = rep + parent_r;
 				/* r' = r + f_total */
 				r += ftotal;
@@ -523,6 +544,10 @@ parent_r %d stable %d\n",
 						in, work->work[-1-in->id],
 						x, r);
 				else
+/** comment by hy 2020-04-02
+ * # 选择出其中一个权重最大的,r用来标识第几个副本,作为随机因子参与所有
+     元素的随机值计算,这里是一个伪随机算法
+ */
 					item = crush_bucket_choose(
 						in, work->work[-1-in->id],
 						x, r,
@@ -535,6 +560,9 @@ parent_r %d stable %d\n",
 				}
 
 				/* desired type? */
+/** comment by hy 2020-11-01
+ * # 获取类型
+ */
 				if (item < 0)
 					itemtype = map->buckets[-1-item]->type;
 				else
@@ -542,6 +570,9 @@ parent_r %d stable %d\n",
 				dprintk("  item %d type %d\n", item, itemtype);
 
 				/* keep going? */
+/** comment by hy 2020-11-01
+ * # 没有到隔离类型
+ */
 				if (itemtype != type) {
 					if (item >= 0 ||
 					    (-1-item) >= map->max_buckets) {
@@ -554,6 +585,9 @@ parent_r %d stable %d\n",
 					continue;
 				}
 
+/** comment by hy 2020-04-02
+ * # 选重复了, 就标准冲突
+ */
 				/* collision? */
 				for (i = 0; i < outpos; i++) {
 					if (out[i] == item) {
@@ -562,6 +596,10 @@ parent_r %d stable %d\n",
 					}
 				}
 
+/** comment by hy 2020-04-02
+ * # 没有冲突,并且是叶子节点,有节点输出,无节点从根开始再来一次
+     vary_r = chooseleaf_vary_r参数设置成大于0 可以在递归调用中传入不同的r值
+ */
 				reject = 0;
 				if (!collide && recurse_to_leaf) {
 					if (item < 0) {
@@ -570,6 +608,9 @@ parent_r %d stable %d\n",
 							sub_r = r >> (vary_r-1);
 						else
 							sub_r = 0;
+/** comment by hy 2020-11-01
+ * # weight 表示 osd 的那个 0-1 的权重, 这里递归调用开始
+ */
 						if (crush_choose_firstn(
 							    map,
 							    work,
@@ -594,6 +635,9 @@ parent_r %d stable %d\n",
 		                        }
 				}
 
+/** comment by hy 2020-11-02
+ * # 判断是不是 out
+ */
 				if (!reject && !collide) {
 					/* out? */
 					if (itemtype == 0)
@@ -679,6 +723,9 @@ static void crush_choose_indep(const struct crush_map *map,
 		bucket->id, x, outpos, numrep);
 
 	/* initially my result is undefined */
+/** comment by hy 2020-11-01
+ * # 清空输出结果
+ */
 	for (rep = outpos; rep < endpos; rep++) {
 		out[rep] = CRUSH_ITEM_UNDEF;
 		if (out2)
@@ -701,6 +748,9 @@ static void crush_choose_indep(const struct crush_map *map,
 		}
 #endif
 		for (rep = outpos; rep < endpos; rep++) {
+/** comment by hy 2020-11-01
+ * # 该位置已经选择完成
+ */
 			if (out[rep] != CRUSH_ITEM_UNDEF)
 				continue;
 
@@ -733,6 +783,9 @@ static void crush_choose_indep(const struct crush_map *map,
 					break;
 				}
 
+/** comment by hy 2020-11-01
+ * # 开始选择
+ */
 				item = crush_bucket_choose(
 					in, work->work[-1-in->id],
 					x, r,
@@ -772,6 +825,9 @@ static void crush_choose_indep(const struct crush_map *map,
 
 				/* collision? */
 				collide = 0;
+/** comment by hy 2020-11-02
+ * # 组合算法 不同的r 是在一个item中
+ */
 				for (i = outpos; i < endpos; i++) {
 					if (out[i] == item) {
 						collide = 1;
@@ -886,17 +942,40 @@ void crush_init_workspace(const struct crush_map *m, void *v) {
 	BUG_ON((char *)point - (char *)w != m->working_size);
 }
 
-/**
+/** comment by hy 2020-02-18
  * crush_do_rule - calculate a mapping with the given input and rule
- * @map: the crush_map
- * @ruleno: the rule id
- * @x: hash input
- * @result: pointer to result vector
- * @result_max: maximum result size
- * @weight: weight vector (for map leaves)
- * @weight_max: size of weight vector
+ * 完成crush算法的选择过程
+ * @map: the crush_map crush map结构
+ * @ruleno: the rule id 规则id
+ * @x: hash input 输入参数一般是 pgid
+ * @result: pointer to result vector 输出的osd列表
+ * @result_max: maximum result size 书册的osd的数量
+ * @weight: weight vector (for map leaves) 所有osd权重,通过他来判断osd是否out
+ * @weight_max: size of weight vector 所以osd的数量
  * @cwin: Pointer to at least map->working_size bytes of memory or NULL.
+
+  执行流程
+    ruleset 0
+    type replicated
+    min_size 1
+    max_size 10
+    step take default #定义pg查找副本的入口点
+    # 容灾模式 chooseleaf(容灾) choose(非容灾)
+    # 冗余算法 firstn(副本) indep
+    # 输出的副本数 0(表示 不同的pool使用同一个pool,可以有不同的副本数)
+    # type 对应容灾模式时表示叶子节点,对弈非容灾表示类型
+    step chooseleaf firstn 0 type host #选叶子节点、深度优先、隔离host
+    step emit #结束
+  测试范例
+    crushtool -i mycrushmap --test --min-x 0 --max-x 9 --num-rep 3 --ruleset 0 \
+      --show_mappings --show-statistics
  */
+/** comment by hy 2020-10-31
+ * # *cwin 输入的拓扑信息
+     *weight 拓扑 osd 对应的权重
+     weight_max 是*weight 空间大小
+ */
+
 int crush_do_rule(const struct crush_map *map,
 		  int ruleno, int x, int *result, int result_max,
 		  const __u32 *weight, int weight_max,
@@ -904,9 +983,18 @@ int crush_do_rule(const struct crush_map *map,
 {
 	int result_len;
 	struct crush_work *cw = cwin;
+/** comment by hy 2020-10-31
+ * # a放在输入的 选择 bucket 上
+ */
 	int *a = (int *)((char *)cw + map->working_size);
+/** comment by hy 2020-10-31
+ * # 输出的偏移
+ */
 	int *b = a + result_max;
 	int *c = b + result_max;
+/** comment by hy 2020-04-02
+ * # 选择 的 bucket, w osd 的信息
+ */
 	int *w = a;
 	int *o = b;
 	int recurse_to_leaf;
@@ -942,17 +1030,30 @@ int crush_do_rule(const struct crush_map *map,
 	rule = map->rules[ruleno];
 	result_len = 0;
 
+/** comment by hy 2020-04-02
+ * # 按照规则执行
+ */
 	for (step = 0; step < rule->len; step++) {
 		int firstn = 0;
 		const struct crush_rule_step *curstep = &rule->steps[step];
 
 		switch (curstep->op) {
+/** comment by hy 2020-03-12
+ * # 开始起点
+ */
 		case CRUSH_RULE_TAKE:
+/** comment by hy 2020-03-12
+ * # arg1 = 选择的bucket的id号
+     参数合法就记录入点
+ */
 			if ((curstep->arg1 >= 0 &&
 			     curstep->arg1 < map->max_devices) ||
 			    (-1-curstep->arg1 >= 0 &&
 			     -1-curstep->arg1 < map->max_buckets &&
 			     map->buckets[-1-curstep->arg1])) {
+/** comment by hy 2020-03-12
+ * # 记录一个bucket id,作为后续输入
+ */
 				w[0] = curstep->arg1;
 				wsize = 1;
 			} else {
@@ -992,13 +1093,22 @@ int crush_do_rule(const struct crush_map *map,
 
 		case CRUSH_RULE_CHOOSELEAF_FIRSTN:
 		case CRUSH_RULE_CHOOSE_FIRSTN:
+/** comment by hy 2020-04-02
+ * # 副本处理
+ */
 			firstn = 1;
 			/* fall through */
 		case CRUSH_RULE_CHOOSELEAF_INDEP:
 		case CRUSH_RULE_CHOOSE_INDEP:
+/** comment by hy 2020-04-02
+ * # 纠删码处理
+ */
 			if (wsize == 0)
 				break;
 
+/** comment by hy 2020-04-02
+ * # 副本纠删码分支
+ */
 			recurse_to_leaf =
 				curstep->op ==
 				 CRUSH_RULE_CHOOSELEAF_FIRSTN ||
@@ -1009,6 +1119,9 @@ int crush_do_rule(const struct crush_map *map,
 			osize = 0;
 
 			for (i = 0; i < wsize; i++) {
+/** comment by hy 2020-04-02
+ * # 数组号
+ */
 				int bno;
 				numrep = curstep->arg1;
 				if (numrep <= 0) {
@@ -1025,6 +1138,9 @@ int crush_do_rule(const struct crush_map *map,
 					continue;
 				}
 				if (firstn) {
+/** comment by hy 2020-03-13
+ * # 副本选择
+ */
 					int recurse_tries;
 					if (choose_leaf_tries)
 						recurse_tries =
@@ -1033,6 +1149,9 @@ int crush_do_rule(const struct crush_map *map,
 						recurse_tries = 1;
 					else
 						recurse_tries = choose_tries;
+/** comment by hy 2020-04-02
+ * # 开始选择 curstep->arg2 隔离类型
+ */
 					osize += crush_choose_firstn(
 						map,
 						cw,
@@ -1053,6 +1172,22 @@ int crush_do_rule(const struct crush_map *map,
 						0,
 						choose_args);
 				} else {
+/** comment by hy 2020-03-13
+ * # 纠删码 10
+     EC的indep类rule的流程大体上与firstn类似，只是需要为没选出的item留好位置
+     trial 0: result = [UNDEF, UNDEF, UNDEF]
+     trial 1: rep=0, r=0 ---> ceph0, chooseleaf
+              |_ rep=0, r=0 ---> osd.0, OK
+              rep=1, r=1 ---> ceph0, collide
+              rep=2, r=2 ---> ceph2, chooseleaf
+              |_ rep=2, r=2 ---> osd.4, OK
+     result = [0, UNDEF, 4]
+     trial 2: rep=0, r=3 ---> not UNDEF, continue
+              rep=1, r=4 ---> ceph1, chooseleaf
+              |_ rep=1, r=1 ---> osd.2, OK
+              rep=2, r=5 ---> not UNDEF, continue
+     result = [0, 2, 4], return
+ */
 					out_size = ((numrep < (result_max-osize)) ?
 						    numrep : (result_max-osize));
 					crush_choose_indep(
@@ -1087,6 +1222,9 @@ int crush_do_rule(const struct crush_map *map,
 
 
 		case CRUSH_RULE_EMIT:
+/** comment by hy 2020-03-13
+ * # 最终选择结果给上级调用者
+ */
 			for (i = 0; i < wsize && result_len < result_max; i++) {
 				result[result_len] = w[i];
 				result_len++;

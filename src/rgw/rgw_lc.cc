@@ -212,8 +212,15 @@ bool RGWLifecycleConfiguration::valid()
 void *RGWLC::LCWorker::entry() {
   do {
     utime_t start = ceph_clock_now();
+/** comment by hy 2020-08-06
+ * # 到达 rgw_lifecycle_work_time 设置的时间范围
+     或者 设定 rgw_lc_debug_interval>0 作为条件
+ */
     if (should_work(start)) {
       ldpp_dout(dpp, 2) << "life cycle: start" << dendl;
+/** comment by hy 2020-08-06
+ * # 执行回收
+ */
       int r = lc->process(this, false /* once */);
       if (r < 0) {
         ldpp_dout(dpp, 0) << "ERROR: do life cycle process() returned error r="
@@ -239,22 +246,49 @@ void *RGWLC::LCWorker::entry() {
   return NULL;
 }
 
+/*****************************************************************************
+ * 函 数 名  : RGWLC.initialize
+ * 负 责 人  : hy
+ * 创建日期  : 2020年3月5日
+ * 函数功能  : lifecycle初始化
+                 初始化lifecycle 的指定index 对象名称
+                 生成lifecycle 指定的cookie
+ * 输入参数  : CephContext *_cct                 
+               rgw::sal::RGWRadosStore *_store   
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 void RGWLC::initialize(CephContext *_cct, rgw::sal::RGWRadosStore *_store) {
   cct = _cct;
   store = _store;
   max_objs = cct->_conf->rgw_lc_max_objs;
+/** comment by hy 2020-03-05
+ * # lifecycle 最大迭代数 7877
+ */
   if (max_objs > HASH_PRIME)
     max_objs = HASH_PRIME;
 
   obj_names = new string[max_objs];
-
+/** comment by hy 2020-03-05
+ * # 生成对应的对象名称
+ */
   for (int i = 0; i < max_objs; i++) {
     obj_names[i] = lc_oid_prefix;
+/** comment by hy 2020-03-05
+ * # 这里对此一步
+ */
     char buf[32];
     snprintf(buf, 32, ".%d", i);
     obj_names[i].append(buf);
   }
 
+/** comment by hy 2020-03-05
+ * # 生成 cookie buffer
+     随机选择映射表中的16个字符
+ */
 #define COOKIE_LEN 16
   char cookie_buf[COOKIE_LEN + 1];
   gen_rand_alphanumeric(cct, cookie_buf, sizeof(cookie_buf) - 1);
@@ -1507,6 +1541,9 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
   };
   worker->workpool->setf(pf);
 
+/** comment by hy 2020-08-06
+ * # prefix_map 对象分片的相关信息
+ */
   multimap<string, lc_op>& prefix_map = config.get_prefix_map();
   ldpp_dout(this, 10) << __func__ <<  "() prefix_map size="
 		      << prefix_map.size()
@@ -1514,6 +1551,9 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
 
   rgw_obj_key pre_marker;
   rgw_obj_key next_marker;
+/** comment by hy 2020-08-06
+ * # 检查它们是否达到了过期时间
+ */
   for(auto prefix_iter = prefix_map.begin(); prefix_iter != prefix_map.end();
       ++prefix_iter) {
 
@@ -1666,12 +1706,18 @@ static inline vector<int> random_sequence(uint32_t n)
 
 int RGWLC::process(LCWorker* worker, bool once = false)
 {
+/** comment by hy 2020-08-06
+ * # rgw_lc_lock_max_time 默认 60 S
+ */
   int max_secs = cct->_conf->rgw_lc_lock_max_time;
 
   /* generate an index-shard sequence unrelated to any other
    * that might be running in parallel */
   vector<int> shard_seq = random_sequence(max_objs);
   for (auto index : shard_seq) {
+/** comment by hy 2020-08-06
+ * # 
+ */
     int ret = process(index, max_secs, worker, once);
     if (ret < 0)
       return ret;
@@ -1819,6 +1865,9 @@ int RGWLC::process(int index, int max_lock_secs, LCWorker* worker,
 	    << dendl;
 
     l.unlock(&store->getRados()->lc_pool_ctx, obj_names[index]);
+/** comment by hy 2020-08-06
+ * # 正式开始进行对象的lc操作
+ */
     ret = bucket_lc_process(entry.bucket, worker, thread_stop_at(), once);
     bucket_lc_post(index, max_lock_secs, entry, ret, worker);
   } while(1 && !once);
