@@ -92,7 +92,6 @@ TRACEPOINT_EVENT(librados, rados_connect_exit,
     )
 )
 
-/* modify begin by hy, 2020-12-12, BugId:123 原因: iscsi map */
 TRACEPOINT_EVENT(librados, rados_subscribe_servicemap_enter,
     TP_ARGS(
         rados_t, cluster,
@@ -128,7 +127,6 @@ TRACEPOINT_EVENT(librados, rados_get_servicemap_exit,
         ctf_integer(int, retval, retval)
     )
 )
-/* modify begin by hy, 2020-12-12 */
 
 TRACEPOINT_EVENT(librados, rados_shutdown_enter,
     TP_ARGS(

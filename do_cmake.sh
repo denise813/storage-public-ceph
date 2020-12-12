@@ -3,7 +3,10 @@ set -ex
 
 git submodule update --init --recursive
 
-: ${BUILD_DIR:=build}
+PWD=$(pwd)
+BUILD_DIR=${PWD}/build
+rm -rf ${BUILD_DIR}
+
 : ${CEPH_GIT_DIR:=..}
 
 if [ -e $BUILD_DIR ]; then
@@ -58,7 +61,20 @@ if type cmake3 > /dev/null 2>&1 ; then
 else
     CMAKE=cmake
 fi
-${CMAKE} $ARGS "$@" $CEPH_GIT_DIR || exit 1
+#${CMAKE} $ARGS "$@" $CEPH_GIT_DIR || exit 1
+${CMAKE} -DCMAKE_INSTALL_PREFIX=/usr \
+	-DCMAKE_INSTALL_LIBDIR=/usr/lib64 \
+	-DCMAKE_INSTALL_LIBEXECDIR=/usr/lib \
+	-DCMAKE_INSTALL_LOCALSTATEDIR=/var \
+	-DCMAKE_INSTALL_SYSCONFDIR=/etc \
+	-DCMAKE_INSTALL_MANDIR=/usr/share/man \
+        -DCMAKE_INSTALL_DOCDIR=/usr/share/doc \
+        -DCMAKE_INSTALL_INCLUDEDIR=/usr/include \
+        -DCMAKE_BUILD_TYPE=Debug -DWITH_TESTS=OFF \
+        -DWITH_LIBRADOSSTRIPER=ON \
+	-DWITH_MGR_DASHBOARD_FRONTEND=OFF \
+	-DCMAKE_C_FLAGS="-W -Wall -Wfatal-errors -O0 -g3 -gdwarf-4" \
+	$ARGS "$@" $CEPH_GIT_DIR || exit 1
 set +x
 
 # minimal config to find plugins
@@ -81,3 +97,13 @@ if a performance sensitive build is required.
 EOF
 fi
 
+# Ö´ÐÐ build
+pushd ${BUILD_DIR}
+make -j2
+#make install
+#MON=1 OSD=1 MDS=0 MGR=1 RGW=0 ../src/vstart.sh -d -b -n -i 10.112.88.1
+#MGR=1 MON=1 OSD=1 MDS=0 RGW=0 ../src/vstart.sh -n -x --without-dashboard --bluestore --crimson --nodaemon --redirect-output --osd-args "--memory 4G"
+#ceph osd pool create pool1
+#rados put -p pool001 Doxyfile ./Doxyfile
+#rados get -p pool001 Doxyfile
+popd

@@ -13,11 +13,12 @@ version=$1
 if expr index $version '-' > /dev/null; then
     rpm_version=$(echo $version | cut -d - -f 1-1)
 # 修改成指定的release 版本
-    rpm_release=$(echo $version | cut -d - -f 2- | sed 's/-/./')
+    rpm_release=$(echo $version | cut -d - -f 2-2)
 else
     rpm_version=$version
     rpm_release=0
 fi
+rpm_release=0
 
 outfile="ceph-$version"
 echo "version $version"
@@ -120,7 +121,7 @@ generate_rook_ceph_client() {
 
 # clean out old cruft...
 echo "cleanup..."
-rm -f $outfile*
+#rm -f $outfile*
 
 # build new tarball
 echo "building tarball..."
@@ -140,6 +141,15 @@ for spec in ceph.spec.in alpine/APKBUILD.in; do
         sed "s/@PROJECT_VERSION@/$rpm_version/g" |
         sed "s/@RPM_RELEASE@/$rpm_release/g" |
         sed "s/@TARBALL_BASENAME@/ceph-$version/g" > `echo $spec | sed 's/.in$//'`
+done
+# 添加开发测试快速打包
+topdir=$(pwd)
+for spec in lenovo.spec.in alpine/APKBUILD.in; do
+    cat $spec |
+        sed "s/@PROJECT_VERSION@/$rpm_version/g" |
+	sed "s/@RPM_RELEASE@/$rpm_release/g" |
+	sed "s#@CEPH_SOURCE@#$topdir#g" |
+	sed "s/@TARBALL_BASENAME@/ceph-$version/g" > `echo $spec | sed 's/.in$//'`
 done
 ln -s . $outfile
 tar cvf $outfile.version.tar $outfile/src/.git_version $outfile/ceph.spec $outfile/alpine/APKBUILD
