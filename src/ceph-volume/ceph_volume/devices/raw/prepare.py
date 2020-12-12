@@ -110,6 +110,7 @@ class Prepare(object):
 
 
         # modify begin by hy, 2020-12-12, BugId:123 原因: root 启动
+        osd_fsid = None
         if self.args.osd_fsid != None:
                 osd_fsid = self.args.osd_fsid
         else :
@@ -126,12 +127,13 @@ class Prepare(object):
             db = self.args.block_db
 
         #  specify osd_id by args
+        osd_id = None
         if self.args.osd_id != None:
-            self.osd_id = self.args.osd_id
+            osd_id = self.args.osd_id
         else :
         # reuse a given ID if it exists, otherwise create a new ID
         self.osd_id = prepare_utils.create_id(
-            osd_fsid, json.dumps(secrets))
+            osd_fsid, json.dumps(secrets), osd_id)
 		 # modify begin by hy, 2020-12-12
 
         prepare_bluestore(
