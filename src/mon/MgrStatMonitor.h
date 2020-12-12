@@ -49,6 +49,9 @@ public:
   bool preprocess_getpoolstats(MonOpRequestRef op);
   bool preprocess_statfs(MonOpRequestRef op);
 
+/* modify begin by hy, 2020-10-15, BugId:123 原因: 添加 iscsi 进程获取 iscsi map */
+  void check_sub(Subscription *sub, const std::string & service);
+/* modify end by hy, 2020-10-15 */
   void check_sub(Subscription *sub);
   void check_subs();
   void send_digests();

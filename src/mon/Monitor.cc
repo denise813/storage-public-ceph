@@ -5307,6 +5307,10 @@ void Monitor::handle_subscribe(MonOpRequestRef op)
       mgrmon()->check_sub(s->sub_map[p->first]);
     } else if (p->first == "servicemap") {
       mgrstatmon()->check_sub(s->sub_map[p->first]);
+     } else if (p->first == "iscsimap") {
+      /* modify begin by hy, 2020-10-15, BugId:123 原因: 添加 iscsi 进程获取 iscsi map */
+      mgrstatmon()->check_sub(s->sub_map[p->first], p->first);
+      /* modify end by hy, 2020-10-15 */
     } else if (p->first == "config") {
       configmon()->check_sub(s);
     }
